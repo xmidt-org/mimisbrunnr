@@ -1,0 +1,18 @@
+# -*- mode: conf -*-
+
+[Unit]
+Description=Provides device specific event delivery.
+Documentation=https://github.com/xmidt-org/mimisbrunnr
+After=network.target
+
+[Service]
+EnvironmentFile=-/etc/default/mimisbrunnr
+User=mimisbrunnr
+ExecStart=/usr/bin/mimisbrunnr \
+          $MIMISBRUNNR_OPTS
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target

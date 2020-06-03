@@ -3,13 +3,14 @@ package webhook
 import (
 	"github.com/SermoDigital/jose/jwt"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/metrics"
+	"github.com/go-kit/kit/metrics/provider"
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
 	"github.com/spf13/viper"
 	"github.com/xmidt-org/webpa-common/secure"
 	"github.com/xmidt-org/webpa-common/secure/handler"
 	"github.com/xmidt-org/webpa-common/secure/key"
-	"github.com/xmidt-org/webpa-common/webhook"
 	"github.com/xmidt-org/webpa-common/xmetrics"
 )
 
@@ -37,6 +38,10 @@ const (
 	MimmisbrunnrMetric = "mimmisbrunnr"
 )
 
+const (
+	ListSize = "webhook_list_size"
+)
+
 func Metrics() []xmetrics.Metric {
 	return []xmetrics.Metric{
 		{
@@ -49,7 +54,17 @@ func Metrics() []xmetrics.Metric {
 	}
 }
 
-func NewPrimaryHandler(l log.Logger, v *viper.Viper, reg *webhook.Registry) (*mux.Router, error) {
+type Measures struct {
+	WebhookListSize metrics.Gauge
+}
+
+func NewMeasures(p provider.Provider) *Measures {
+	return &Measures{
+		WebhookListSize: p.NewGauge(ListSize),
+	}
+}
+
+func NewPrimaryHandler(l log.Logger, v *viper.Viper, reg *Registry) (*mux.Router, error) {
 	var (
 		router = mux.NewRouter()
 	)
@@ -71,7 +86,7 @@ func NewPrimaryHandler(l log.Logger, v *viper.Viper, reg *webhook.Registry) (*mu
 	return configServerRouter(router, authorizationDecorator, reg), nil
 }
 
-func configServerRouter(router *mux.Router, primaryHandler alice.Chain, webhookRegistry *webhook.Registry) *mux.Router {
+func configServerRouter(router *mux.Router, primaryHandler alice.Chain, webhookRegistry *Registry) *mux.Router {
 	// register webhook end points
 	router.Handle("/hook", primaryHandler.ThenFunc(webhookRegistry.UpdateRegistry)).Methods("POST")
 

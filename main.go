@@ -18,34 +18,49 @@
 package main
 
 import (
-	"fmt"
-	"mimisbrunnr/eventregistration"
-	"mimisbrunnr/webhook"
 	"os"
 
 	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
+	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"go.uber.org/fx"
 )
 
 const (
 	applicationName = "mimisbrunnr"
+	apiBase         = "norns"
 )
+
+type Config struct {
+	internalQueue eventParser.InternalQueue
+	// add the endpoints
+}
 
 func main() {
 	app := fx.New(
 		fx.Provide(
-			webhook.Mimisbrunnr,
-			eventregistration.Listener,
+			viper.New(),
+
+			func(v *viper.Viper) (Config, error) {
+				var config Config
+				err := v.Unmarshal(&config)
+				return config, err
+			},
+			// Provide Queue
+			// eventregistration.Listener,
+		),
+		fx.Invoke(
+			BuildPrimaryRoutes,
+			BuildMetricsRoutes,
+			BuildHealthRoutes,
 		),
 	)
-	fmt.Println(app)
 	switch err := app.Err(); err {
 	case pflag.ErrHelp:
 		return
 	case nil:
 		app.Run()
 	default:
-		fmt.Println(os.Stderr, err)
 		os.Exit(2)
 	}
 

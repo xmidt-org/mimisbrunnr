@@ -15,48 +15,33 @@
  *
  */
 
-package main
+package eventParser
 
 import (
-	"os"
-
-	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
-	"github.com/xmidt-org/mimisbrunnr/eventParser"
+	"github.com/go-kit/kit/log"
+	"github.com/xmidt-org/mimisbrunnr/norn"
 	"go.uber.org/fx"
 )
 
-const (
-	applicationName = "mimisbrunnr"
-	apiBase         = "norns"
-)
+type EventParserIn struct {
+	fx.In
 
-func main() {
-	app := fx.New(
-		fx.Provide(
-			viper.New(),
+	Lifecycle   fx.Lifecycle
+	EventSender norn.EventSender
+	Logger      log.Logger
+}
 
-			func(v *viper.Viper) (eventParser.Options, error) {
-				var parserOpt eventParser.Options
-				err := v.Unmarshal(&parserOpt)
-				return parserOpt, err
-			},
-
-			eventParser.Provide,
-		),
-		fx.Invoke(
-			BuildPrimaryRoutes,
-			BuildMetricsRoutes,
-			BuildHealthRoutes,
-		),
-	)
-	switch err := app.Err(); err {
-	case pflag.ErrHelp:
-		return
-	case nil:
-		app.Run()
-	default:
-		os.Exit(2)
+func Provide(in EventParserIn, opt Options) (*eventParser, error) {
+	ep, err := NewEventParser(in.EventSender, in.Logger, opt)
+	if err != nil {
+		return &eventParser{}, err
 	}
+
+	in.Lifecycle.Append(fx.Hook{
+		OnStart: ep.Start(),
+		OnStop:  ep.Stop(),
+	})
+
+	return ep, nil
 
 }

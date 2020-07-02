@@ -18,55 +18,147 @@
 package eventParser
 
 import (
+	"context"
+	"errors"
 	"io/ioutil"
 	"net/http"
 	"path"
 	"strings"
+	"sync"
+	"time"
 
+	"emperror.dev/emperror"
+	"github.com/go-kit/kit/log"
 	db "github.com/xmidt-org/codex-db"
+	"github.com/xmidt-org/mimisbrunnr/norn"
 	"github.com/xmidt-org/svalinn/rules"
 	"github.com/xmidt-org/webpa-common/logging"
+	semaphore "github.com/xmidt-org/webpa-common/semaphore"
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-func eventHandler(writer http.ResponseWriter, req *http.Request) {
-	var message wrp.Message
+const (
+	defaultTTL          = time.Duration(5) * time.Minute
+	minMaxWorkers       = 5
+	defaultMinQueueSize = 5
+)
+
+type Options struct {
+	QueueSize  int
+	MaxWorkers int
+	RegexRules []rules.RuleConfig
+}
+
+type eventParser struct {
+	parserRules  rules.Rules
+	requestQueue chan *wrp.Message
+	parseWorkers semaphore.Interface
+	logger       log.Logger
+	measures     *Measures
+	wg           sync.WaitGroup
+	opt          Options
+	sender       norn.EventSender
+}
+
+func NewEventParser(sender norn.EventSender, logger log.Logger, o Options) (*eventParser, error) { //{ config EventParserConfig)
+	if o.MaxWorkers < minMaxWorkers {
+		o.MaxWorkers = minMaxWorkers
+	}
+	if o.QueueSize < defaultMinQueueSize {
+		o.QueueSize = defaultMinQueueSize
+	}
+	queue := make(chan *wrp.Message, o.QueueSize)
+	workers := semaphore.New(o.MaxWorkers)
+
+	parsedRules, err := rules.NewRules(o.RegexRules)
+	if err != nil {
+		return nil, emperror.Wrap(err, "failed to create rules from config")
+	}
+
+	eventParser := eventParser{
+		parserRules:  parsedRules,
+		requestQueue: queue,
+		parseWorkers: workers,
+		opt:          o,
+		sender:       sender,
+	}
+	return &eventParser, nil
+}
+
+func (p *eventParser) eventHandler(writer http.ResponseWriter, req *http.Request) {
+	var message *wrp.Message
 	msgBytes, err := ioutil.ReadAll(req.Body)
 	req.Body.Close()
 	if err != nil {
-		// logging.Error(app.logger).Log(logging.MessageKey(), "Could not read request body", logging.ErrorKey(), err.Error())
+		logging.Error(p.logger).Log(logging.MessageKey(), "Could not read request body", logging.ErrorKey(), err.Error())
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	err = wrp.NewDecoderBytes(msgBytes, wrp.Msgpack).Decode(&message)
 	if err != nil {
-		// logging.Error(app.logger).Log(logging.MessageKey(), "Could not decode request body", logging.ErrorKey(), err.Error())
+		logging.Error(p.logger).Log(logging.MessageKey(), "Could not decode request body", logging.ErrorKey(), err.Error())
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	// need to add message to queue
-	EventFilter(message)
+	// add message to queue
+	select {
+	case p.requestQueue <- message:
+		if p.measures != nil {
+			p.measures.EventParsingQueue.Add(1.0)
+		}
+	default:
+		if p.measures != nil {
+			p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
+		}
+		errors.New("Event Parser Queue Full")
+	}
 
 	writer.WriteHeader(http.StatusAccepted)
-
 }
 
-func EventFilter(message wrp.Message) error {
+func (p *eventParser) Start() func(context.Context) error {
+
+	return func(ctx context.Context) error {
+		p.wg.Add(1)
+		go p.parseEvents()
+		return nil
+	}
+}
+
+func (p *eventParser) parseEvents() {
+	var (
+		message *wrp.Message
+	)
+	select {
+	case message = <-p.requestQueue:
+		if p.measures != nil {
+			p.measures.EventParsingQueue.Add(-1.0)
+		}
+		p.parseWorkers.Acquire()
+		go p.parseDeviceID(message)
+	}
+
+	for i := 0; i < p.opt.MaxWorkers; i++ {
+		p.parseWorkers.Acquire()
+	}
+}
+
+func (p *eventParser) parseDeviceID(message *wrp.Message) error {
 	var (
 		err      error
 		deviceID string
 	)
 
-	rules, err := rules.NewRules(app.RegexRules)
+	rules, err := rules.NewRules(p.opt.RegexRules)
 	if err != nil {
 		return err
 	}
 
 	rule, err := rules.FindRule(message.Destination)
 	if err != nil {
-		logging.Info(app.logger).Log(logging.MessageKey(), "Could not get rule", logging.ErrorKey(), err, "destination", message.Destination)
+		logging.Info(p.logger).Log(logging.MessageKey(), "Could not get rule", logging.ErrorKey(), err, "destination", message.Destination)
 	}
 
 	eventType := db.Default
@@ -89,10 +181,18 @@ func EventFilter(message wrp.Message) error {
 		deviceID = strings.ToLower(message.Source)
 	}
 
-	if deviceID == app.deviceID {
-		//todo: implement to deliver event
-	}
+	// call manager
+	p.sender.Send(message, deviceID)
 
 	return err
+
+}
+
+func (p *eventParser) Stop() func(context.Context) error {
+	return func(ctx context.Context) error {
+		close(p.requestQueue)
+		p.wg.Wait()
+		return nil
+	}
 
 }

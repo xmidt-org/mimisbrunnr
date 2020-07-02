@@ -63,23 +63,24 @@ func NewRegistry(config RegistryConfig, listener chrysom.Listener) (*Registry, e
 	}, nil
 }
 
-func (r *Registry) AddNorn(rw http.ResponseWriter, req *http.Request) {
+// POST '/norns'
+func (r *Registry) AddNorn(rw http.ResponseWriter, req *http.Request) string {
 	payload, err := ioutil.ReadAll(req.Body)
 
 	norn, err := model.NewNorn(payload, req.RemoteAddr)
 	if err != nil {
 		jsonResponse(rw, http.StatusBadRequest, err.Error())
-		return
+		return ""
 	}
 
 	nornPayload := map[string]interface{}{}
 	data, err := json.Marshal(&norn)
 	if err != nil {
-		return
+		return ""
 	}
 	err = json.Unmarshal(data, &nornPayload)
 	if err != nil {
-		return
+		return ""
 	}
 
 	nornItem := argus.Item{
@@ -87,49 +88,33 @@ func (r *Registry) AddNorn(rw http.ResponseWriter, req *http.Request) {
 		Data:       nornPayload,
 		TTL:        r.config.ArgusConfig.DefaultTTL,
 	}
-	_, err = r.hookStore.Push(nornItem, "")
+	nornID, err := r.hookStore.Push(nornItem, "")
 	if err != nil {
 		jsonResponse(rw, http.StatusInternalServerError, err.Error())
-		return
+		return ""
 	}
 
 	jsonResponse(rw, http.StatusOK, "Success")
+	return nornID
 }
 
-func (r *Registry) GetAllNorns(rw http.ResponseWriter, req *http.Request) (norns []model.Norn, err error) {
-	items, err := r.hookStore.GetItems("")
-	if err != nil {
-		return
-	}
-	norns = []model.Norn{}
-	for _, item := range items {
-		norn, err := convertItemToNorn(item)
-		if err != nil {
-			log.WithPrefix(r.config.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
-			continue
-		}
-		norns = append(norns, norn)
-	}
-	return norns, nil
-}
-
+// DELETE '/norns/{id}'/
 func (r *Registry) RemoveNorn(rw http.ResponseWriter, req *http.Request) (norns model.Norn, err error) {
 	nornID := mux.Vars(req)
 	id := nornID["id"]
 
 	item, err := r.hookStore.Remove(id, "")
 	if err != nil {
-		// add loggging
+		log.WithPrefix(r.config.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to remove item", "item", item)
 	}
-	norn, err := convertItemToNorn(item)
+	norn, err := ConvertItemToNorn(item)
 	if err != nil {
-		// add logging
+		log.WithPrefix(r.config.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
 	}
 	return norn, nil
-
 }
 
-func convertItemToNorn(item argus.Item) (model.Norn, error) {
+func ConvertItemToNorn(item argus.Item) (model.Norn, error) {
 	norn := model.Norn{}
 	tempBytes, err := json.Marshal(&item.Data)
 	if err != nil {

@@ -29,6 +29,10 @@ import (
 	"go.uber.org/fx"
 )
 
+var (
+	ServerLabel = "Mimisbrunnr"
+)
+
 type ServerChainIn struct {
 	fx.In
 
@@ -112,29 +116,45 @@ type GetRoutesIn struct {
 	fx.In
 	Handler store.Handler `name:"getHandler"`
 }
+type DeleteRoutesIn struct {
+	fx.In
+	Handler store.Handler `name:"deleteHandler"`
+}
+
+type PostRoutesIn struct {
+	fx.In
+	Handler store.Handler `name:"postHandler"`
+}
+
 type GetAllRoutesIn struct {
 	fx.In
 	Handler store.Handler `name:"getAllHandler"`
 }
 
-type PostRouteIn struct {
+type PostEventRouteIn struct {
 	fx.In
 	Handler store.Handler `name:"eventHandler"`
 }
 
-func BuildPrimaryRoutes(router PrimaryRouter, sin SetRoutesIn, gin GetRoutesIn, gain GetAllRoutesIn, pin PostRouteIn) {
+func BuildPrimaryRoutes(router PrimaryRouter, sin SetRoutesIn, gin GetRoutesIn, din DeleteRoutesIn, pin PostRoutesIn, gain GetAllRoutesIn, pein PostEventRouteIn) {
 	if router.Handler != nil {
 		if sin.Handler != nil {
 			router.Router.Handle("/norns", sin.Handler).Methods("PUT")
 		}
 		if gin.Handler != nil {
-			router.Router.Handle("/norns/{id}", gin.Handler).Methods("GET", "DELETE")
+			router.Router.Handle("/norns/{id}", gin.Handler).Methods("GET")
+		}
+		if din.Handler != nil {
+			router.Router.Handle("/norns/{id}", din.Handler).Methods("DELETE")
+		}
+		if pin.Handler != nil {
+			router.Router.Handle("/norns/{id}", din.Handler).Methods("POST")
 		}
 		if gain.Handler != nil {
 			router.Router.Handle("/norns", gain.Handler).Methods("GET")
 		}
-		if pin.Handler != nil {
-			router.Router.Handle("/events", pin.Handler).Methods("POST")
+		if pein.Handler != nil {
+			router.Router.Handle("/events", pein.Handler).Methods("POST")
 		}
 	}
 }

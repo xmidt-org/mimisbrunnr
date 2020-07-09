@@ -19,7 +19,6 @@ package eventParser
 
 import (
 	"context"
-	"errors"
 	"io/ioutil"
 	"net/http"
 	"path"
@@ -30,7 +29,7 @@ import (
 	"emperror.dev/emperror"
 	"github.com/go-kit/kit/log"
 	db "github.com/xmidt-org/codex-db"
-	"github.com/xmidt-org/mimisbrunnr/norn"
+	"github.com/xmidt-org/mimisbrunnr/manager"
 	"github.com/xmidt-org/svalinn/rules"
 	"github.com/xmidt-org/webpa-common/logging"
 	semaphore "github.com/xmidt-org/webpa-common/semaphore"
@@ -38,9 +37,9 @@ import (
 )
 
 const (
-	defaultTTL          = time.Duration(5) * time.Minute
-	minMaxWorkers       = 5
-	defaultMinQueueSize = 5
+	DefaultTTL          = time.Duration(5) * time.Minute
+	MinMaxWorkers       = 5
+	DefaultMinQueueSize = 5
 )
 
 type Options struct {
@@ -57,17 +56,16 @@ type eventParser struct {
 	measures     *Measures
 	wg           sync.WaitGroup
 	opt          Options
-	sender       norn.EventSender
+	sender       manager.EventSender
 }
 
-func NewEventParser(sender norn.EventSender, logger log.Logger, o Options) (*eventParser, error) { //{ config EventParserConfig)
-	if o.MaxWorkers < minMaxWorkers {
-		o.MaxWorkers = minMaxWorkers
+func NewEventParser(sender manager.EventSender, logger log.Logger, o Options) (*eventParser, error) { //{ config EventParserConfig)
+	if o.MaxWorkers < MinMaxWorkers {
+		o.MaxWorkers = MinMaxWorkers
 	}
-	if o.QueueSize < defaultMinQueueSize {
-		o.QueueSize = defaultMinQueueSize
+	if o.QueueSize < DefaultMinQueueSize {
+		o.QueueSize = DefaultMinQueueSize
 	}
-	queue := make(chan *wrp.Message, o.QueueSize)
 	workers := semaphore.New(o.MaxWorkers)
 
 	parsedRules, err := rules.NewRules(o.RegexRules)
@@ -77,7 +75,6 @@ func NewEventParser(sender norn.EventSender, logger log.Logger, o Options) (*eve
 
 	eventParser := eventParser{
 		parserRules:  parsedRules,
-		requestQueue: queue,
 		parseWorkers: workers,
 		opt:          o,
 		sender:       sender,
@@ -85,7 +82,7 @@ func NewEventParser(sender norn.EventSender, logger log.Logger, o Options) (*eve
 	return &eventParser, nil
 }
 
-func (p *eventParser) eventHandler(writer http.ResponseWriter, req *http.Request) {
+func (p *eventParser) HandleEvents(writer http.ResponseWriter, req *http.Request) {
 	var message *wrp.Message
 	msgBytes, err := ioutil.ReadAll(req.Body)
 	req.Body.Close()
@@ -112,7 +109,6 @@ func (p *eventParser) eventHandler(writer http.ResponseWriter, req *http.Request
 		if p.measures != nil {
 			p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
 		}
-		errors.New("Event Parser Queue Full")
 	}
 
 	writer.WriteHeader(http.StatusAccepted)
@@ -121,6 +117,8 @@ func (p *eventParser) eventHandler(writer http.ResponseWriter, req *http.Request
 func (p *eventParser) Start() func(context.Context) error {
 
 	return func(ctx context.Context) error {
+		queue := make(chan *wrp.Message, p.opt.QueueSize)
+		p.requestQueue = queue
 		p.wg.Add(1)
 		go p.parseEvents()
 		return nil

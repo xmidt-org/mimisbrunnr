@@ -114,6 +114,24 @@ func (r *Registry) RemoveNorn(rw http.ResponseWriter, req *http.Request) (norns 
 	return norn, nil
 }
 
+// GET '/norns'
+func (r *Registry) GetAllNorns(rw http.ResponseWriter, req *http.Request) (norns []model.Norn, err error) {
+	items, err := r.hookStore.GetItems("")
+	if err != nil {
+		return
+	}
+	norns = []model.Norn{}
+	for _, item := range items {
+		norn, err := ConvertItemToNorn(item)
+		if err != nil {
+			log.WithPrefix(r.config.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
+			continue
+		}
+		norns = append(norns, norn)
+	}
+	return norns, nil
+}
+
 func ConvertItemToNorn(item argus.Item) (model.Norn, error) {
 	norn := model.Norn{}
 	tempBytes, err := json.Marshal(&item.Data)

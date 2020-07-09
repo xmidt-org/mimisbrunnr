@@ -26,8 +26,30 @@ type Norn struct {
 }
 
 type Destination struct {
-	Type string
-	Info map[string]interface{}
+	Type       string
+	Info       map[string]interface{}
+	AWSConfig  AWSConfig
+	HttpConfig HttpConfig
+}
+
+type AWSConfig struct {
+	AccessKey string
+	SecretKey string
+	ID        string
+	Env       string
+	Sqs       SQSConfig
+}
+
+type SQSConfig struct {
+	QueueURL     string
+	DelaySeconds int64
+	Region       string
+}
+
+type HttpConfig struct {
+	URL        string
+	Secret     string
+	AcceptType string
 }
 
 func NewNorn(jsonString []byte, ip string) (norn *Norn, err error) {

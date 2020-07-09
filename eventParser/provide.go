@@ -19,7 +19,7 @@ package eventParser
 
 import (
 	"github.com/go-kit/kit/log"
-	"github.com/xmidt-org/mimisbrunnr/norn"
+	"github.com/xmidt-org/mimisbrunnr/manager"
 	"go.uber.org/fx"
 )
 
@@ -27,7 +27,7 @@ type EventParserIn struct {
 	fx.In
 
 	Lifecycle   fx.Lifecycle
-	EventSender norn.EventSender
+	EventSender manager.EventSender
 	Logger      log.Logger
 }
 

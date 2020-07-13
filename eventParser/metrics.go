@@ -20,7 +20,9 @@ package eventParser
 import (
 	"github.com/go-kit/kit/metrics"
 	"github.com/go-kit/kit/metrics/provider"
-	"github.com/xmidt-org/webpa-common/xmetrics"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/xmidt-org/themis/xmetrics"
+	"go.uber.org/fx"
 )
 
 const (
@@ -30,20 +32,20 @@ const (
 	queueFullReason      = "queue_full"
 )
 
-func Metrics() []xmetrics.Metric {
-	return []xmetrics.Metric{
-		{
-			Name: ParsingQueueDepth,
-			Help: "The depth of the parsing queue",
-			Type: "gauge",
-		},
-		{
-			Name:       DroppedEventsCounter,
-			Help:       "The total number of events dropped",
-			Type:       "counter",
-			LabelNames: []string{reasonLabel},
-		},
-	}
+func ProvideMetrics() fx.Option {
+	return fx.Provide(
+		xmetrics.ProvideGauge(
+			prometheus.GaugeOpts{
+				Name: ParsingQueueDepth,
+				Help: "The depth of the parsing queue",
+			},
+		),
+		xmetrics.ProvideCounter(
+			prometheus.CounterOpts{
+				Name: DroppedEventsCounter,
+				Help: "The total number of events dropped"},
+		),
+	)
 }
 
 type Measures struct {

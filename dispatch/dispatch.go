@@ -19,27 +19,30 @@ package dispatch
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha1"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"strconv"
+	"time"
+
 	"net/http"
 	"strings"
-	"sync/atomic"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/kit/metrics"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/device"
-	"github.com/xmidt-org/webpa-common/semaphore"
+	"github.com/xmidt-org/webpa-common/logging"
 	"github.com/xmidt-org/webpa-common/xhttp"
 	"github.com/xmidt-org/wrp-go/v2"
 	"github.com/xmidt-org/wrp-go/v2/wrphttp"
@@ -51,94 +54,28 @@ const (
 )
 
 type D interface {
-	Queue(en *EventNorn)
+	Start() func(context.Context) error
 	Dispatch() error
 	Update(norn model.Norn)
-	Stop()
+	Stop() func(context.Context) error
 }
 
-type DispatcherConfig struct {
-	// info needed to create New Dispatchers
-	// add workers to config
-	QueueSize    int
-	MaxWorkers   int
-	SenderConfig SenderConfig
-}
+// failureText is human readable text for the failure message
+const FailureText = `Unfortunately, your endpoint is not able to keep up with the ` +
+	`traffic being sent to it.  Due to this circumstance, all notification traffic ` +
+	`is being cut off and dropped for a period of time.  Please increase your ` +
+	`capacity to handle notifications, or reduce the number of notifications ` +
+	`you have requested.`
 
-type SenderConfig struct {
-	NumWorkersPerSender   int
-	ResponseHeaderTimeout time.Duration
-	IdleConnTimeout       time.Duration
-}
-
-type Dispatcher struct {
-	// DispatchQueue chan *EventNorn
-	DispatchQueue    atomic.Value
-	Measures         *Measures
-	Workers          semaphore.Interface
-	MaxWorkers       int
-	Logger           log.Logger
-	DeliveryRetries  int
-	DeliveryInterval time.Duration
-	QueueSize        int
-	Sender           func(*http.Request) (*http.Response, error)
-}
-
-type EventNorn struct {
-	Event    *wrp.Message
-	Norn     model.Norn
-	DeviceID string
-}
-
-func NewDispatcher(dc DispatcherConfig) (D, error) {
-	if dc.QueueSize < defaultMinQueueSize {
-		dc.QueueSize = defaultMinQueueSize
-	}
-
-	if dc.MaxWorkers < minMaxWorkers {
-		dc.MaxWorkers = minMaxWorkers
-	}
-
-	tr := &http.Transport{
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
-		MaxIdleConnsPerHost:   dc.SenderConfig.NumWorkersPerSender,
-		ResponseHeaderTimeout: dc.SenderConfig.ResponseHeaderTimeout,
-		IdleConnTimeout:       dc.SenderConfig.IdleConnTimeout,
-	}
-
-	dispatcher := Dispatcher{
-		MaxWorkers: dc.MaxWorkers,
-		QueueSize:  dc.QueueSize,
-		Sender: (&http.Client{
-			Transport: tr,
-		}).Do,
-	}
-
-	dispatcher.DispatchQueue.Store(make(chan *EventNorn, dc.QueueSize))
-
-	return dispatcher, nil
-}
-
-func NewEventNorn(event *wrp.Message, norn model.Norn, deviceID string) *EventNorn {
-	return &EventNorn{
-		Event:    event,
-		Norn:     norn,
-		DeviceID: deviceID,
-	}
-}
-
-func (d Dispatcher) Queue(en *EventNorn) {
-	select {
-	case d.DispatchQueue.Load().(chan *EventNorn) <- en:
-		d.Measures.EventQueueDepthGauge.Add(1.0)
-	default:
-		d.queueOverflow()
-		d.Measures.DroppedQueueCount.Add(1.0)
+func (d Dispatcher) Start() func(context.Context) error {
+	return func(ctx context.Context) error {
+		go d.Dispatch()
+		return nil
 	}
 }
 
 func (d Dispatcher) Dispatch() error {
-
+	defer d.Wg.Wait()
 	queue := d.DispatchQueue.Load().(chan *EventNorn)
 	select {
 
@@ -147,6 +84,21 @@ func (d Dispatcher) Dispatch() error {
 			break
 		}
 		d.Measures.EventQueueDepthGauge.Add(-1.0)
+
+		d.Mutex.RLock()
+		deliverUntil := d.DeliverUntil
+		dropUntil := d.DropUntil
+		d.Mutex.RUnlock()
+
+		now := time.Now()
+
+		if now.Before(dropUntil) {
+			d.Measures.DroppedCutoffCounter.Add(1.0)
+		}
+		if now.After(deliverUntil) {
+			d.Measures.DroppedExpiredCounter.Add(1.0)
+		}
+
 		if en.DeviceID == en.Norn.DeviceID {
 			d.Workers.Acquire()
 			d.Measures.WorkersCount.Add(1.0)
@@ -161,11 +113,11 @@ func (d Dispatcher) Dispatch() error {
 
 }
 
-func (d *Dispatcher) Empty() {
-	// droppedMsgs := d.DispatchQueue.Load().(chan *EventNorn)
+func (d *Dispatcher) Empty(droppedCounter metrics.Counter) {
+	droppedMsgs := d.DispatchQueue.Load().(chan *EventNorn)
 	d.DispatchQueue.Store(make(chan *wrp.Message, d.QueueSize))
-	// add metric for dropped events
-	// add metric for queueDepth and set to 0
+	droppedCounter.Add(float64(len(droppedMsgs)))
+	d.Measures.EventQueueDepthGauge.Set(0.0)
 	return
 }
 
@@ -176,18 +128,20 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 		sess, err := session.NewSession(&aws.Config{
 			Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
 			Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
-			// add delay and/or maxretries
 		})
 		if err != nil {
-			// return aws_err
-			// add logging
+			d.Measures.DroppedInvalidConfig.Add(1.0)
+			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
+			return
 		}
 		sqsClient := sqs.New(sess)
 
 		// Send message
 		jsonMsg, err := json.Marshal(msg)
 		if err != nil {
-			// add logging
+			d.Measures.DroppedInvalidConfig.Add(1.0)
+			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to marshal event.")
+			return
 		}
 		sqsParams := &sqs.SendMessageInput{
 			MessageBody:  aws.String(string(jsonMsg)),
@@ -195,11 +149,13 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 			DelaySeconds: aws.Int64(3),
 		}
 		_, err = sqsClient.SendMessage(sqsParams)
-		// use resp from SendMessage to use for logging
 		if err != nil {
-			// add logging
+			d.Measures.DroppedNetworkErrCounter.Add(1.0)
+			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to sqs.")
+			return
 		}
-		// check resp and log
+		d.Measures.DeliveryCounter.With("url", norn.Destination.AWSConfig.Sqs.QueueURL)
+
 	case "http":
 		var (
 			body []byte
@@ -217,7 +173,9 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 
 		req, err := http.NewRequest("POST", norn.Destination.HttpConfig.URL, payloadReader)
 		if nil != err {
-			// add metrics and logging for a dropped message
+			d.Measures.DroppedInvalidConfig.Add(1.0)
+			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Invalid URL",
+				"url", norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 			return
 		}
 		req.Header.Set("Content-Type", contentType)
@@ -242,6 +200,9 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 			req.Header.Set("X-Webpa-Signature", sig)
 		}
 
+		// find the event "short name"
+		event := msg.FindEventStringSubMatch()
+
 		retryOptions := xhttp.RetryOptions{
 			Logger:      d.Logger,
 			Retries:     d.DeliveryRetries,
@@ -252,13 +213,12 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 			},
 		}
 		resp, err := xhttp.RetryTransactor(retryOptions, d.Sender)(req)
-		// code := "failure"
+		code := "failure"
 		if nil != err {
-			// Report failure for metrics
-			// obs.droppedNetworkErrCounter.Add(1.0)
+			d.Measures.DroppedNetworkErrCounter.Add(1.0)
 		} else {
 			// Report Result for metrics
-			// code = strconv.Itoa(resp.StatusCode)
+			code = strconv.Itoa(resp.StatusCode)
 
 			// read until the response is complete before closing to allow
 			// connection reuse
@@ -267,18 +227,83 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 				resp.Body.Close()
 			}
 		}
-		// obs.deliveryCounter.With("url", obs.id, "code", code, "event", event).Add(1.0)
-		// add delivery metric
+		d.Measures.DeliveryCounter.With("url", norn.Destination.HttpConfig.URL, "code", code, "event", event).Add(1.0)
 	}
 
 }
 
 // called if queue is filled
-func (d Dispatcher) queueOverflow() {
-	d.Empty()
-	// add metrics
+func (d Dispatcher) queueOverflow(en *EventNorn) {
 
-	// add cutoffs
+	d.Mutex.Lock()
+	if time.Now().Before(d.DropUntil) {
+		d.Mutex.Unlock()
+		return
+	}
+	d.DropUntil = time.Now().Add(d.CutOffPeriod)
+	d.Measures.DropUntilGauge.Set(float64(d.DropUntil.Unix()))
+	secret := en.Norn.Destination.HttpConfig.Secret
+	failureMsg := d.FailureMsg
+	failureURL := en.Norn.Destination.HttpConfig.FailureURL
+	d.Mutex.Unlock()
+
+	var (
+		errorLog = log.WithPrefix(d.Logger, level.Key(), level.ErrorValue())
+	)
+
+	d.Measures.CutOffCounter.Add(1.0)
+
+	// We empty the queue but don't close the channel, because we're not
+	// shutting down.
+	d.Empty(d.Measures.DroppedCutoffCounter)
+
+	msg, err := json.Marshal(failureMsg)
+	if nil != err {
+		errorLog.Log(logging.MessageKey(), "Cut-off notification json.Marshal failed", "failureMessage", d.FailureMsg,
+			"for", en.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+		return
+	}
+
+	// if no URL to send cut off notification to, do nothing
+	if "" == failureURL {
+		return
+	}
+
+	// Send a "you've been cut off" warning message
+	payload := bytes.NewReader(msg)
+	req, err := http.NewRequest("POST", failureURL, payload)
+	if nil != err {
+		// Failure
+		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
+			failureURL, "for", en.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	if "" != secret {
+		h := hmac.New(sha1.New, []byte(secret))
+		h.Write(msg)
+		sig := fmt.Sprintf("sha1=%s", hex.EncodeToString(h.Sum(nil)))
+		req.Header.Set("X-Webpa-Signature", sig)
+	}
+
+	//  record content type, json.
+	d.Measures.ContentTypeCounter.With("content_type", "json").Add(1.0)
+	resp, err := d.Sender(req)
+	if nil != err {
+		// Failure
+		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
+			failureURL, "for", en.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+		return
+	}
+
+	if nil == resp {
+		// Failure
+		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification, nil response",
+			"notification", failureURL)
+		return
+	}
+
 }
 
 // update TTL for norn
@@ -286,6 +311,18 @@ func (d Dispatcher) Update(norn model.Norn) {
 
 }
 
-func (d Dispatcher) Stop() {
-	close(d.DispatchQueue.Load().(chan *EventNorn))
+func (d Dispatcher) Stop() func(context.Context) error {
+	return func(ctx context.Context) error {
+		close(d.DispatchQueue.Load().(chan *EventNorn))
+		d.Wg.Wait()
+
+		d.Mutex.Lock()
+		d.DeliverUntil = time.Time{}
+		d.Measures.DeliverUntilGauge.Set(float64(d.DeliverUntil.Unix()))
+		d.Measures.EventQueueDepthGauge.Set(0.0)
+		d.Mutex.Unlock()
+
+		close(d.DispatchQueue.Load().(chan *EventNorn))
+		return nil
+	}
 }

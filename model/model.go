@@ -50,6 +50,7 @@ type HttpConfig struct {
 	URL        string
 	Secret     string
 	AcceptType string
+	FailureURL string
 }
 
 func NewNorn(jsonString []byte, ip string) (norn *Norn, err error) {

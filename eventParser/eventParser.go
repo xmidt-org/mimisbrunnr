@@ -24,6 +24,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"emperror.dev/emperror"
@@ -50,7 +51,7 @@ type Options struct {
 
 type eventParser struct {
 	parserRules  rules.Rules
-	requestQueue chan *wrp.Message
+	requestQueue atomic.Value
 	parseWorkers semaphore.Interface
 	logger       log.Logger
 	measures     *Measures
@@ -101,7 +102,7 @@ func (p *eventParser) HandleEvents(writer http.ResponseWriter, req *http.Request
 
 	// add message to queue
 	select {
-	case p.requestQueue <- message:
+	case p.requestQueue.Load().(chan *wrp.Message) <- message:
 		if p.measures != nil {
 			p.measures.EventParsingQueue.Add(1.0)
 		}
@@ -117,8 +118,8 @@ func (p *eventParser) HandleEvents(writer http.ResponseWriter, req *http.Request
 func (p *eventParser) Start() func(context.Context) error {
 
 	return func(ctx context.Context) error {
-		queue := make(chan *wrp.Message, p.opt.QueueSize)
-		p.requestQueue = queue
+
+		p.requestQueue.Store(make(chan *wrp.Message, p.opt.QueueSize))
 		p.wg.Add(1)
 		go p.parseEvents()
 		return nil
@@ -129,8 +130,9 @@ func (p *eventParser) parseEvents() {
 	var (
 		message *wrp.Message
 	)
+	queue := p.requestQueue.Load().(chan *wrp.Message)
 	select {
-	case message = <-p.requestQueue:
+	case message = <-queue:
 		if p.measures != nil {
 			p.measures.EventParsingQueue.Add(-1.0)
 		}
@@ -188,7 +190,7 @@ func (p *eventParser) parseDeviceID(message *wrp.Message) error {
 
 func (p *eventParser) Stop() func(context.Context) error {
 	return func(ctx context.Context) error {
-		close(p.requestQueue)
+		close(p.requestQueue.Load().(chan *wrp.Message))
 		p.wg.Wait()
 		return nil
 	}

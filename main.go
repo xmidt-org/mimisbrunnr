@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"go.uber.org/fx"
 )
@@ -34,15 +35,23 @@ const (
 func main() {
 	app := fx.New(
 		fx.Provide(
-			viper.New(),
+			dispatch.ProvideMetrics,
 
+			viper.New(),
 			func(v *viper.Viper) (eventParser.Options, error) {
 				var parserOpt eventParser.Options
 				err := v.Unmarshal(&parserOpt)
 				return parserOpt, err
 			},
 
+			func(v *viper.Viper) (dispatch.DispatcherConfig, error) {
+				var dispatchConf dispatch.DispatcherConfig
+				err := v.Unmarshal(&dispatchConf)
+				return dispatchConf, err
+			},
+
 			eventParser.Provide,
+			dispatch.Provide,
 		),
 		fx.Invoke(
 			BuildPrimaryRoutes,

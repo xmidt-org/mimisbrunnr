@@ -40,6 +40,7 @@ type Manager struct {
 type nornDispatcher struct {
 	norn       model.Norn
 	dispatcher dispatch.D
+	queue      dispatch.Q
 }
 
 type Listener interface {
@@ -49,13 +50,6 @@ type Listener interface {
 type EventSender interface {
 	Send(event *wrp.Message, deviceID string) //send event to all dispatchers in map
 }
-
-// func newDispatcher(dc dispatch.DispatcherConfig) (dispatch.Dispatcher, error) {
-// 	// create new dispatcher for
-// 	// var df dispatch.DispatchFunc
-
-// 	return df
-// }
 
 func (m *Manager) Update(items []argus.Item) {
 	recentMap := make(map[string]model.Norn)
@@ -103,7 +97,8 @@ func (m *Manager) Send(event *wrp.Message, deviceID string) {
 	for _, nd := range m.nornsDispatch {
 		// call Queue()
 		en := dispatch.NewEventNorn(event, nd.norn, deviceID)
-		nd.dispatcher.Queue(en)
+		nd.queue.Queue(en)
+		// nd.dispatcher.Queue(en)
 		// nd.dispatcher.Dispatch(event, nd.norn, deviceID)
 	}
 }

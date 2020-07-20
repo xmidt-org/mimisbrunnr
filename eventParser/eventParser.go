@@ -30,7 +30,6 @@ import (
 	"emperror.dev/emperror"
 	"github.com/go-kit/kit/log"
 	db "github.com/xmidt-org/codex-db"
-	"github.com/xmidt-org/mimisbrunnr/manager"
 	"github.com/xmidt-org/svalinn/rules"
 	"github.com/xmidt-org/webpa-common/logging"
 	semaphore "github.com/xmidt-org/webpa-common/semaphore"
@@ -42,6 +41,10 @@ const (
 	MinMaxWorkers       = 5
 	DefaultMinQueueSize = 5
 )
+
+type EventSender interface {
+	Send(event *wrp.Message, deviceID string) //send event to all dispatchers in map
+}
 
 type Options struct {
 	QueueSize  int
@@ -57,10 +60,10 @@ type eventParser struct {
 	measures     *Measures
 	wg           sync.WaitGroup
 	opt          Options
-	sender       manager.EventSender
+	sender       EventSender
 }
 
-func NewEventParser(sender manager.EventSender, logger log.Logger, o Options) (*eventParser, error) { //{ config EventParserConfig)
+func NewEventParser(sender EventSender, logger log.Logger, o Options) (*eventParser, error) { //{ config EventParserConfig)
 	if o.MaxWorkers < MinMaxWorkers {
 		o.MaxWorkers = MinMaxWorkers
 	}

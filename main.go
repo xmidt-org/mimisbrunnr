@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
+	"github.com/xmidt-org/mimisbrunnr/norn"
 	"go.uber.org/fx"
 )
 
@@ -34,9 +35,8 @@ const (
 
 func main() {
 	app := fx.New(
-		fx.Provide(
-			dispatch.ProvideMetrics,
 
+		fx.Provide(
 			viper.New(),
 			func(v *viper.Viper) (eventParser.Options, error) {
 				var parserOpt eventParser.Options
@@ -50,8 +50,17 @@ func main() {
 				return dispatchConf, err
 			},
 
+			func(v *viper.Viper) (norn.RegistryConfig, error) {
+				var registryConf norn.RegistryConfig
+				err := v.Unmarshal(&registryConf)
+				return registryConf, err
+			},
+
+			norn.NewRegistry,
+			dispatch.ProvideMetrics,
 			eventParser.Provide,
-			dispatch.Provide,
+
+			viper.New(),
 		),
 		fx.Invoke(
 			BuildPrimaryRoutes,

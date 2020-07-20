@@ -64,23 +64,24 @@ func NewRegistry(config RegistryConfig, listener chrysom.Listener) (*Registry, e
 }
 
 // POST '/norns'
-func (r *Registry) AddNorn(rw http.ResponseWriter, req *http.Request) string {
+func (r *Registry) AddNorn(rw http.ResponseWriter, req *http.Request) (string, int) {
+	owner := req.Header.Get("X-Midt-Owner")
 	payload, err := ioutil.ReadAll(req.Body)
 
 	norn, err := model.NewNorn(payload, req.RemoteAddr)
 	if err != nil {
 		jsonResponse(rw, http.StatusBadRequest, err.Error())
-		return ""
+		return "", http.StatusBadRequest
 	}
 
 	nornPayload := map[string]interface{}{}
 	data, err := json.Marshal(&norn)
 	if err != nil {
-		return ""
+		return "", http.StatusBadRequest
 	}
 	err = json.Unmarshal(data, &nornPayload)
 	if err != nil {
-		return ""
+		return "", http.StatusBadRequest
 	}
 
 	nornItem := argus.Item{
@@ -88,22 +89,23 @@ func (r *Registry) AddNorn(rw http.ResponseWriter, req *http.Request) string {
 		Data:       nornPayload,
 		TTL:        r.config.ArgusConfig.DefaultTTL,
 	}
-	nornID, err := r.hookStore.Push(nornItem, "")
+	nornID, err := r.hookStore.Push(nornItem, owner)
 	if err != nil {
 		jsonResponse(rw, http.StatusInternalServerError, err.Error())
-		return ""
+		return "", http.StatusInternalServerError
 	}
 
 	jsonResponse(rw, http.StatusOK, "Success")
-	return nornID
+	return nornID, http.StatusOK
 }
 
 // DELETE '/norns/{id}'/
 func (r *Registry) RemoveNorn(rw http.ResponseWriter, req *http.Request) (norns model.Norn, err error) {
 	nornID := mux.Vars(req)
 	id := nornID["id"]
+	owner := req.Header.Get("X-Midt-Owner")
 
-	item, err := r.hookStore.Remove(id, "")
+	item, err := r.hookStore.Remove(id, owner)
 	if err != nil {
 		log.WithPrefix(r.config.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to remove item", "item", item)
 	}
@@ -116,7 +118,8 @@ func (r *Registry) RemoveNorn(rw http.ResponseWriter, req *http.Request) (norns 
 
 // GET '/norns'
 func (r *Registry) GetAllNorns(rw http.ResponseWriter, req *http.Request) (norns []model.Norn, err error) {
-	items, err := r.hookStore.GetItems("")
+	owner := req.Header.Get("X-Midt-Owner")
+	items, err := r.hookStore.GetItems(owner)
 	if err != nil {
 		return
 	}

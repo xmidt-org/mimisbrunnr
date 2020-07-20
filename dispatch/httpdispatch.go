@@ -24,6 +24,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	aws "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/go-kit/kit/log"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/semaphore"
@@ -34,6 +38,7 @@ type DispatcherConfig struct {
 	QueueSize    int
 	NumWorkers   int
 	SenderConfig SenderConfig
+	Norn         model.Norn
 }
 
 type SenderConfig struct {
@@ -61,11 +66,13 @@ type Dispatcher struct {
 	FailureMsg       FailureMessage
 	Wg               sync.WaitGroup
 	DeliverUntil     time.Time
+	Norn             model.Norn
+	DestinationType  string
+	SqsClient        *sqs.SQS
 }
 
-type EventNorn struct {
+type eventWithID struct {
 	Event    *wrp.Message
-	Norn     model.Norn
 	DeviceID string
 }
 
@@ -76,7 +83,21 @@ type FailureMessage struct {
 	Workers      int    `json:"worker_count"`
 }
 
-func NewDispatcher(dc DispatcherConfig) (D, error) {
+const (
+	HttpType = "http"
+	SqsType  = "sqs"
+)
+
+func NewTransport(dc DispatcherConfig) *http.Transport {
+	return &http.Transport{
+		TLSClientConfig:       &tls.Config{},
+		MaxIdleConnsPerHost:   dc.SenderConfig.NumWorkersPerSender,
+		ResponseHeaderTimeout: dc.SenderConfig.ResponseHeaderTimeout,
+		IdleConnTimeout:       dc.SenderConfig.IdleConnTimeout,
+	}
+}
+
+func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport *http.Transport) (D, error) {
 	if dc.QueueSize < defaultMinQueueSize {
 		dc.QueueSize = defaultMinQueueSize
 	}
@@ -85,18 +106,11 @@ func NewDispatcher(dc DispatcherConfig) (D, error) {
 		dc.NumWorkers = minMaxWorkers
 	}
 
-	tr := &http.Transport{
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
-		MaxIdleConnsPerHost:   dc.SenderConfig.NumWorkersPerSender,
-		ResponseHeaderTimeout: dc.SenderConfig.ResponseHeaderTimeout,
-		IdleConnTimeout:       dc.SenderConfig.IdleConnTimeout,
-	}
-
 	dispatcher := Dispatcher{
 		MaxWorkers: dc.NumWorkers,
 		QueueSize:  dc.QueueSize,
 		Sender: (&http.Client{
-			Transport: tr,
+			Transport: transport,
 		}).Do,
 		FailureMsg: FailureMessage{
 			Text:         FailureText,
@@ -105,17 +119,32 @@ func NewDispatcher(dc DispatcherConfig) (D, error) {
 			Workers:      dc.NumWorkers,
 		},
 		DeliverUntil: dc.SenderConfig.DeliverUntil,
+		Norn:         norn,
 	}
 
-	dispatcher.DispatchQueue.Store(make(chan *EventNorn, dc.QueueSize))
+	dispatcher.DispatchQueue.Store(make(chan *eventWithID, dc.QueueSize))
+
+	if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
+		dispatcher.DestinationType = HttpType
+	} else {
+		dispatcher.DestinationType = SqsType
+
+		sess, err := session.NewSession(&aws.Config{
+			Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
+			Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
+		})
+		if err != nil {
+			return dispatcher, err
+		}
+		dispatcher.SqsClient = sqs.New(sess)
+	}
 
 	return dispatcher, nil
 }
 
-func NewEventNorn(event *wrp.Message, norn model.Norn, deviceID string) *EventNorn {
-	return &EventNorn{
+func NewEventWithID(event *wrp.Message, deviceID string) *eventWithID {
+	return &eventWithID{
 		Event:    event,
-		Norn:     norn,
 		DeviceID: deviceID,
 	}
 }

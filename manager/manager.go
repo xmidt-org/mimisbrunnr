@@ -40,21 +40,19 @@ type Manager struct {
 type nornDispatcher struct {
 	norn       model.Norn
 	dispatcher dispatch.D
-	queue      dispatch.Q
 }
 
 type Listener interface {
 	Update(items []argus.Item)
 }
 
-type EventSender interface {
-	Send(event *wrp.Message, deviceID string) //send event to all dispatchers in map
-}
-
+// chrysom client listener
 func (m *Manager) Update(items []argus.Item) {
 	recentMap := make(map[string]model.Norn)
 	newNorns := []nornDispatcher{}
 	oldNorns := []dispatch.D{}
+
+	transport := dispatch.NewTransport(m.dispatcherConfig)
 
 	for _, item := range items {
 		id := item.Identifier
@@ -65,10 +63,12 @@ func (m *Manager) Update(items []argus.Item) {
 		if _, ok := m.nornsDispatch[id]; ok {
 			recentMap[id] = norn
 		} else {
-			dispatcher, err := dispatch.NewDispatcher(m.dispatcherConfig)
+			dispatcher, err := dispatch.NewDispatcher(m.dispatcherConfig, norn, transport)
 			if err == nil {
 				newNorns = append(newNorns, nornDispatcher{norn: norn, dispatcher: dispatcher})
 				recentMap[id] = norn
+			} else {
+				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
 			}
 		}
 	}
@@ -78,7 +78,6 @@ func (m *Manager) Update(items []argus.Item) {
 			oldNorns = append(oldNorns, norndis.dispatcher)
 			delete(m.nornsDispatch, i)
 		} else {
-			// update TTL for norn
 			norndis.dispatcher.Update(val)
 		}
 	}
@@ -95,23 +94,19 @@ func (m *Manager) Update(items []argus.Item) {
 
 func (m *Manager) Send(event *wrp.Message, deviceID string) {
 	for _, nd := range m.nornsDispatch {
-		// call Queue()
-		en := dispatch.NewEventNorn(event, nd.norn, deviceID)
-		nd.queue.Queue(en)
-		// nd.dispatcher.Queue(en)
-		// nd.dispatcher.Dispatch(event, nd.norn, deviceID)
+		nd.dispatcher.Dispatch(deviceID, event)
 	}
 }
 
 // GET '/norns/id'
-func (m *Manager) GetNorn(rw http.ResponseWriter, req *http.Request) (norn model.Norn, err error) {
+func (m *Manager) GetNorn(rw http.ResponseWriter, req *http.Request) (model.Norn, int) {
 	nornID := mux.Vars(req)
 	id := nornID["id"]
 
 	if norndis, ok := m.nornsDispatch[id]; ok {
-		return norndis.norn, nil
+		return norndis.norn, http.StatusOK
 	} else {
-		logging.Info(m.logger).Log(logging.MessageKey(), "Could not get norn", logging.ErrorKey(), err)
+		logging.Info(m.logger).Log(logging.MessageKey(), "Could not get norn")
+		return model.Norn{}, http.StatusNotFound
 	}
-	return
 }

@@ -44,6 +44,8 @@ github.com/aws/aws-sdk-go v1.8.12 h1:b0fXUoyobc5gJPWDLILKg7wZQFhWFS9IgyopMYIHEv8
 github.com/aws/aws-sdk-go v1.8.12/go.mod h1:ZRmQr0FajVIyZ4ZzBYKG5P3ZqPz9IHG41ZoMu1ADI3k=
 github.com/aws/aws-sdk-go v1.31.6 h1:nKjQbpXhdImctBh1e0iLg9iQW/X297LPPuY/9f92R2k=
 github.com/aws/aws-sdk-go v1.31.6/go.mod h1:5zCpMtNQVjRREroY7sYe8lOMRSxkhG6MZveU8YkpAk0=
+github.com/aws/aws-sdk-go v1.33.6 h1:YLoUeMSx05kHwhS+HLDSpdYYpPzJMyp6hn1cWsJ6a+U=
+github.com/aws/aws-sdk-go v1.33.6/go.mod h1:5zCpMtNQVjRREroY7sYe8lOMRSxkhG6MZveU8YkpAk0=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/beorn7/perks v1.0.0 h1:HWo1m869IqiPhD389kmkxeTalrjNbbJTC8LXupb+sl0=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
@@ -457,6 +459,8 @@ github.com/xmidt-org/webpa-common v1.10.0/go.mod h1:8Ml4Ck/bANH1TCTfGgLFqepdiotT
 github.com/xmidt-org/webpa-common v1.10.1 h1:A6aQl5CVtpYn+NNM8EzhH4TLG6n6akqLCRFKfK6k2RY=
 github.com/xmidt-org/webpa-common v1.10.2-0.20200604164000-f07406b4eb63 h1:nNNzTUb8HKEMJHrq4VB8ukfTnPVqcI3pgXrjFZP+mV4=
 github.com/xmidt-org/webpa-common v1.10.2-0.20200604164000-f07406b4eb63/go.mod h1:Fmt3wIxBzwJY0KeRHX6RaLZx2xpKTbXCLEA3Xtd6kq8=
+github.com/xmidt-org/webpa-common v1.10.3 h1:oSDMSQwp/q6vwfdVhhPIcSJAFuKjP6yvvt3aGKhj4c8=
+github.com/xmidt-org/webpa-common v1.10.3/go.mod h1:Fmt3wIxBzwJY0KeRHX6RaLZx2xpKTbXCLEA3Xtd6kq8=
 github.com/xmidt-org/wrp-go v1.3.3/go.mod h1:VOKYeeVWc2cyYmGWJksqUCV/lGzReRl0EP74y3mcWp0=
 github.com/xmidt-org/wrp-go v1.3.4 h1:7kj+1VXRNNEI7G0Z3z7C58QpIXrWzTw/eI79FdAhyPA=
 github.com/xmidt-org/wrp-go v1.3.4/go.mod h1:EWC9BgcYYO1hKgLzz6VFPpg3LU6ZWSDV/uNiWC7zP+o=

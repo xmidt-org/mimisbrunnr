@@ -26,7 +26,6 @@ type Norn struct {
 }
 
 type Destination struct {
-	Type       string
 	Info       map[string]interface{}
 	AWSConfig  AWSConfig
 	HttpConfig HttpConfig
@@ -49,32 +48,16 @@ type SQSConfig struct {
 type HttpConfig struct {
 	URL        string
 	Secret     string
-	AcceptType string
 	FailureURL string
 }
 
-func NewNorn(jsonString []byte, ip string) (norn *Norn, err error) {
-	norn = new(Norn)
+func NewNorn(jsonString []byte, ip string) (*Norn, error) {
+	norn := new(Norn)
 
-	err = json.Unmarshal(jsonString, norn)
+	err := json.Unmarshal(jsonString, norn)
 	if err != nil {
-		var norns []Norn
-
-		err = json.Unmarshal(jsonString, &norns)
-		if err != nil {
-			return
-		}
-		norn = &norns[0]
+		return &Norn{}, err
 	}
 
-	err = norn.sanitize(ip)
-	if nil != err {
-		norn = nil
-	}
-	return
-}
-
-// add santize stuff here
-func (norn *Norn) sanitize(ip string) (err error) {
-	return
+	return norn, nil
 }

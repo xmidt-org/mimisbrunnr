@@ -31,7 +31,6 @@ import (
 	"time"
 
 	"net/http"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -41,11 +40,9 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-kit/kit/metrics"
 	"github.com/xmidt-org/mimisbrunnr/model"
-	"github.com/xmidt-org/webpa-common/device"
 	"github.com/xmidt-org/webpa-common/logging"
 	"github.com/xmidt-org/webpa-common/xhttp"
 	"github.com/xmidt-org/wrp-go/v2"
-	"github.com/xmidt-org/wrp-go/v2/wrphttp"
 )
 
 const (
@@ -54,8 +51,8 @@ const (
 )
 
 type D interface {
-	Start() func(context.Context) error
-	Dispatch() error
+	Start(context.Context) error
+	Dispatch(deviceID string, msg *wrp.Message) error
 	Update(norn model.Norn)
 	Stop() func(context.Context) error
 }
@@ -67,16 +64,29 @@ const FailureText = `Unfortunately, your endpoint is not able to keep up with th
 	`capacity to handle notifications, or reduce the number of notifications ` +
 	`you have requested.`
 
-func (d Dispatcher) Start() func(context.Context) error {
-	return func(ctx context.Context) error {
-		go d.Dispatch()
-		return nil
-	}
+func (d Dispatcher) Start(_ context.Context) error {
+	go d.sendEvents()
+	return nil
+
 }
 
-func (d Dispatcher) Dispatch() error {
+func (d Dispatcher) Dispatch(deviceID string, msg *wrp.Message) error {
+	if deviceID == d.Norn.DeviceID {
+		en := NewEventWithID(msg, deviceID)
+		select {
+		case d.DispatchQueue.Load().(chan *eventWithID) <- en:
+			d.Measures.EventQueueDepthGauge.Add(1.0)
+		default:
+			d.queueOverflow()
+			d.Measures.DroppedQueueCount.Add(1.0)
+		}
+	}
+	return nil
+}
+
+func (d Dispatcher) sendEvents() error {
 	defer d.Wg.Wait()
-	queue := d.DispatchQueue.Load().(chan *EventNorn)
+	queue := d.DispatchQueue.Load().(chan *eventWithID)
 	select {
 
 	case en, ok := <-queue:
@@ -99,11 +109,9 @@ func (d Dispatcher) Dispatch() error {
 			d.Measures.DroppedExpiredCounter.Add(1.0)
 		}
 
-		if en.DeviceID == en.Norn.DeviceID {
-			d.Workers.Acquire()
-			d.Measures.WorkersCount.Add(1.0)
-			go d.send(en.Event, en.Norn.Destination.Type, en.Norn.Destination.HttpConfig.AcceptType, en.Norn)
-		}
+		d.Workers.Acquire()
+		d.Measures.WorkersCount.Add(1.0)
+		go d.send(en.Event)
 	}
 	for i := 0; i < d.MaxWorkers; i++ {
 		d.Workers.Acquire()
@@ -113,8 +121,8 @@ func (d Dispatcher) Dispatch() error {
 
 }
 
-func (d *Dispatcher) Empty(droppedCounter metrics.Counter) {
-	droppedMsgs := d.DispatchQueue.Load().(chan *EventNorn)
+func (d *Dispatcher) empty(droppedCounter metrics.Counter) {
+	droppedMsgs := d.DispatchQueue.Load().(chan *eventWithID)
 	d.DispatchQueue.Store(make(chan *wrp.Message, d.QueueSize))
 	droppedCounter.Add(float64(len(droppedMsgs)))
 	d.Measures.EventQueueDepthGauge.Set(0.0)
@@ -122,20 +130,14 @@ func (d *Dispatcher) Empty(droppedCounter metrics.Counter) {
 }
 
 // called to deliver event
-func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, norn model.Norn) {
-	switch destType {
-	case "sqs":
-		sess, err := session.NewSession(&aws.Config{
-			Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
-			Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
-		})
-		if err != nil {
-			d.Measures.DroppedInvalidConfig.Add(1.0)
-			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
-			return
-		}
-		sqsClient := sqs.New(sess)
-
+func (d Dispatcher) send(msg *wrp.Message) {
+	var (
+		url   string
+		code  string
+		event string
+	)
+	switch d.DestinationType {
+	case SqsType:
 		// Send message
 		jsonMsg, err := json.Marshal(msg)
 		if err != nil {
@@ -145,63 +147,43 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 		}
 		sqsParams := &sqs.SendMessageInput{
 			MessageBody:  aws.String(string(jsonMsg)),
-			QueueUrl:     aws.String(norn.Destination.AWSConfig.Sqs.QueueURL),
+			QueueUrl:     aws.String(d.Norn.Destination.AWSConfig.Sqs.QueueURL),
 			DelaySeconds: aws.Int64(3),
 		}
-		_, err = sqsClient.SendMessage(sqsParams)
+		_, err = d.SqsClient.SendMessage(sqsParams)
 		if err != nil {
 			d.Measures.DroppedNetworkErrCounter.Add(1.0)
 			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to sqs.")
 			return
 		}
-		d.Measures.DeliveryCounter.With("url", norn.Destination.AWSConfig.Sqs.QueueURL)
+		url = d.Norn.Destination.AWSConfig.Sqs.QueueURL
 
-	case "http":
+	case HttpType:
 		var (
 			body []byte
 		)
-		contentType := msg.ContentType
-		switch acceptType {
-		case "wrp", "application/msgpack", "application/wrp":
-			contentType = "application/msgpack"
-			buffer := bytes.NewBuffer([]byte{})
-			encoder := wrp.NewEncoder(buffer, wrp.Msgpack)
-			encoder.Encode(msg)
-			body = buffer.Bytes()
-		}
-		payloadReader := bytes.NewReader(body)
 
-		req, err := http.NewRequest("POST", norn.Destination.HttpConfig.URL, payloadReader)
+		jsonMsg, err := json.Marshal(msg)
+		payloadReader := bytes.NewReader(jsonMsg)
+
+		req, err := http.NewRequest("POST", d.Norn.Destination.HttpConfig.URL, payloadReader)
 		if nil != err {
 			d.Measures.DroppedInvalidConfig.Add(1.0)
 			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Invalid URL",
-				"url", norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+				"url", d.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 			return
 		}
-		req.Header.Set("Content-Type", contentType)
-
-		// Add x-Midt-* headers
-		wrphttp.AddMessageHeaders(req.Header, msg)
-
-		// Provide the old headers for now
-		req.Header.Set("X-Webpa-Event", strings.TrimPrefix(msg.Destination, "event:"))
-		req.Header.Set("X-Webpa-Transaction-Id", msg.TransactionUUID)
-
-		// Add the device id without the trailing service
-		id, _ := device.ParseID(msg.Source)
-		req.Header.Set("X-Webpa-Device-Id", string(id))
-		req.Header.Set("X-Webpa-Device-Name", string(id))
 
 		// Apply the secret
-		if "" != norn.Destination.HttpConfig.Secret {
-			s := hmac.New(sha1.New, []byte(norn.Destination.HttpConfig.Secret))
+		if "" != d.Norn.Destination.HttpConfig.Secret {
+			s := hmac.New(sha1.New, []byte(d.Norn.Destination.HttpConfig.Secret))
 			s.Write(body)
 			sig := fmt.Sprintf("sha1=%s", hex.EncodeToString(s.Sum(nil)))
-			req.Header.Set("X-Webpa-Signature", sig)
+			req.Header.Set("X-Codex-Signature", sig)
 		}
 
 		// find the event "short name"
-		event := msg.FindEventStringSubMatch()
+		event = msg.FindEventStringSubMatch()
 
 		retryOptions := xhttp.RetryOptions{
 			Logger:      d.Logger,
@@ -213,7 +195,7 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 			},
 		}
 		resp, err := xhttp.RetryTransactor(retryOptions, d.Sender)(req)
-		code := "failure"
+		code = "failure"
 		if nil != err {
 			d.Measures.DroppedNetworkErrCounter.Add(1.0)
 		} else {
@@ -227,13 +209,17 @@ func (d Dispatcher) send(msg *wrp.Message, destType string, acceptType string, n
 				resp.Body.Close()
 			}
 		}
-		d.Measures.DeliveryCounter.With("url", norn.Destination.HttpConfig.URL, "code", code, "event", event).Add(1.0)
+		url = d.Norn.Destination.HttpConfig.URL
+
+	default:
+		d.Measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
+
 	}
 
 }
 
 // called if queue is filled
-func (d Dispatcher) queueOverflow(en *EventNorn) {
+func (d Dispatcher) queueOverflow() {
 
 	d.Mutex.Lock()
 	if time.Now().Before(d.DropUntil) {
@@ -242,9 +228,9 @@ func (d Dispatcher) queueOverflow(en *EventNorn) {
 	}
 	d.DropUntil = time.Now().Add(d.CutOffPeriod)
 	d.Measures.DropUntilGauge.Set(float64(d.DropUntil.Unix()))
-	secret := en.Norn.Destination.HttpConfig.Secret
+	secret := d.Norn.Destination.HttpConfig.Secret
 	failureMsg := d.FailureMsg
-	failureURL := en.Norn.Destination.HttpConfig.FailureURL
+	failureURL := d.Norn.Destination.HttpConfig.FailureURL
 	d.Mutex.Unlock()
 
 	var (
@@ -255,12 +241,12 @@ func (d Dispatcher) queueOverflow(en *EventNorn) {
 
 	// We empty the queue but don't close the channel, because we're not
 	// shutting down.
-	d.Empty(d.Measures.DroppedCutoffCounter)
+	d.empty(d.Measures.DroppedCutoffCounter)
 
 	msg, err := json.Marshal(failureMsg)
 	if nil != err {
 		errorLog.Log(logging.MessageKey(), "Cut-off notification json.Marshal failed", "failureMessage", d.FailureMsg,
-			"for", en.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+			"for", d.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 		return
 	}
 
@@ -275,7 +261,7 @@ func (d Dispatcher) queueOverflow(en *EventNorn) {
 	if nil != err {
 		// Failure
 		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
-			failureURL, "for", en.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+			failureURL, "for", d.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -284,7 +270,7 @@ func (d Dispatcher) queueOverflow(en *EventNorn) {
 		h := hmac.New(sha1.New, []byte(secret))
 		h.Write(msg)
 		sig := fmt.Sprintf("sha1=%s", hex.EncodeToString(h.Sum(nil)))
-		req.Header.Set("X-Webpa-Signature", sig)
+		req.Header.Set("X-Codex-Signature", sig)
 	}
 
 	//  record content type, json.
@@ -293,7 +279,7 @@ func (d Dispatcher) queueOverflow(en *EventNorn) {
 	if nil != err {
 		// Failure
 		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
-			failureURL, "for", en.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+			failureURL, "for", d.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 		return
 	}
 
@@ -306,14 +292,28 @@ func (d Dispatcher) queueOverflow(en *EventNorn) {
 
 }
 
-// update TTL for norn
 func (d Dispatcher) Update(norn model.Norn) {
+	if d.Norn.TTL == norn.TTL {
+		return
+	} else {
+		d.Norn.TTL = norn.TTL
+	}
+
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
+		Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
+	})
+	if err != nil {
+		d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
+		return
+	}
+	d.SqsClient = sqs.New(sess)
 
 }
 
 func (d Dispatcher) Stop() func(context.Context) error {
 	return func(ctx context.Context) error {
-		close(d.DispatchQueue.Load().(chan *EventNorn))
+		close(d.DispatchQueue.Load().(chan *eventWithID))
 		d.Wg.Wait()
 
 		d.Mutex.Lock()
@@ -322,7 +322,7 @@ func (d Dispatcher) Stop() func(context.Context) error {
 		d.Measures.EventQueueDepthGauge.Set(0.0)
 		d.Mutex.Unlock()
 
-		close(d.DispatchQueue.Load().(chan *EventNorn))
+		close(d.DispatchQueue.Load().(chan *eventWithID))
 		return nil
 	}
 }

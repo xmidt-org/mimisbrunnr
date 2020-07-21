@@ -15,9 +15,11 @@
  *
  */
 
-package main
+package routes
 
 import (
+	"net/http"
+
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +30,18 @@ import (
 	"github.com/xmidt-org/themis/xmetrics/xmetricshttp"
 	"go.uber.org/fx"
 )
+
+// import (
+// 	"github.com/gorilla/mux"
+// 	"github.com/justinas/alice"
+// 	"github.com/prometheus/client_golang/prometheus"
+// 	"github.com/xmidt-org/argus/store"
+// 	"github.com/xmidt-org/themis/xhealth"
+// 	"github.com/xmidt-org/themis/xhttp/xhttpserver"
+// 	"github.com/xmidt-org/themis/xmetrics"
+// 	"github.com/xmidt-org/themis/xmetrics/xmetricshttp"
+// 	"go.uber.org/fx"
+// )
 
 var (
 	ServerLabel = "Mimisbrunnr"
@@ -43,7 +57,7 @@ type ServerChainIn struct {
 	AuthChain *alice.Chain `name:"auth_chain"`
 }
 
-func provideServerChainFactory(in ServerChainIn) xhttpserver.ChainFactory {
+func ProvideServerChainFactory(in ServerChainIn) xhttpserver.ChainFactory {
 	return xhttpserver.ChainFactoryFunc(func(name string, o xhttpserver.Options) (alice.Chain, error) {
 		var (
 			curryLabel = prometheus.Labels{
@@ -110,51 +124,51 @@ type PrimaryRouter struct {
 
 type SetRoutesIn struct {
 	fx.In
-	Handler store.Handler `name:"setHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"setHandler"`
 }
 type GetRoutesIn struct {
 	fx.In
-	Handler store.Handler `name:"getHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"getHandler"`
 }
 type DeleteRoutesIn struct {
 	fx.In
-	Handler store.Handler `name:"deleteHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"deleteHandler"`
 }
 
 type PostRoutesIn struct {
 	fx.In
-	Handler store.Handler `name:"postHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"postHandler"`
 }
 
 type GetAllRoutesIn struct {
 	fx.In
-	Handler store.Handler `name:"getAllHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"getAllHandler"`
 }
 
 type PostEventRouteIn struct {
 	fx.In
-	Handler store.Handler `name:"eventHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"eventHandler"`
 }
 
 func BuildPrimaryRoutes(router PrimaryRouter, sin SetRoutesIn, gin GetRoutesIn, din DeleteRoutesIn, pin PostRoutesIn, gain GetAllRoutesIn, pein PostEventRouteIn) {
 	if router.Handler != nil {
 		if sin.Handler != nil {
-			router.Router.Handle("/norns", sin.Handler).Methods("PUT")
+			router.Router.HandleFunc("/norns", sin.Handler).Methods("PUT")
 		}
 		if gin.Handler != nil {
-			router.Router.Handle("/norns/{id}", gin.Handler).Methods("GET")
+			router.Router.HandleFunc("/norns/{id}", gin.Handler).Methods("GET")
 		}
 		if din.Handler != nil {
-			router.Router.Handle("/norns/{id}", din.Handler).Methods("DELETE")
+			router.Router.HandleFunc("/norns/{id}", din.Handler).Methods("DELETE")
 		}
 		if pin.Handler != nil {
-			router.Router.Handle("/norns/{id}", din.Handler).Methods("POST")
+			router.Router.HandleFunc("/norns/{id}", pin.Handler).Methods("POST")
 		}
 		if gain.Handler != nil {
-			router.Router.Handle("/norns", gain.Handler).Methods("GET")
+			router.Router.HandleFunc("/norns", gain.Handler).Methods("GET")
 		}
 		if pein.Handler != nil {
-			router.Router.Handle("/events", pein.Handler).Methods("POST")
+			router.Router.HandleFunc("/events", pein.Handler).Methods("POST")
 		}
 	}
 }

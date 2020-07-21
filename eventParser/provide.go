@@ -30,10 +30,10 @@ type EventParserIn struct {
 	Logger      log.Logger
 }
 
-func Provide(in EventParserIn, opt Options) (*eventParser, error) {
+func Provide(in EventParserIn, opt Options) (*EventParser, error) {
 	ep, err := NewEventParser(in.EventSender, in.Logger, opt)
 	if err != nil {
-		return &eventParser{}, err
+		return &EventParser{}, err
 	}
 
 	in.Lifecycle.Append(fx.Hook{

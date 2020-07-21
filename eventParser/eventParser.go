@@ -52,7 +52,7 @@ type Options struct {
 	RegexRules []rules.RuleConfig
 }
 
-type eventParser struct {
+type EventParser struct {
 	parserRules  rules.Rules
 	requestQueue atomic.Value
 	parseWorkers semaphore.Interface
@@ -63,7 +63,7 @@ type eventParser struct {
 	sender       EventSender
 }
 
-func NewEventParser(sender EventSender, logger log.Logger, o Options) (*eventParser, error) { //{ config EventParserConfig)
+func NewEventParser(sender EventSender, logger log.Logger, o Options) (*EventParser, error) {
 	if o.MaxWorkers < MinMaxWorkers {
 		o.MaxWorkers = MinMaxWorkers
 	}
@@ -77,7 +77,7 @@ func NewEventParser(sender EventSender, logger log.Logger, o Options) (*eventPar
 		return nil, emperror.Wrap(err, "failed to create rules from config")
 	}
 
-	eventParser := eventParser{
+	eventParser := EventParser{
 		parserRules:  parsedRules,
 		parseWorkers: workers,
 		opt:          o,
@@ -86,7 +86,7 @@ func NewEventParser(sender EventSender, logger log.Logger, o Options) (*eventPar
 	return &eventParser, nil
 }
 
-func (p *eventParser) HandleEvents(writer http.ResponseWriter, req *http.Request) {
+func (p *EventParser) HandleEvents(writer http.ResponseWriter, req *http.Request) {
 	var message *wrp.Message
 	msgBytes, err := ioutil.ReadAll(req.Body)
 	req.Body.Close()
@@ -118,7 +118,7 @@ func (p *eventParser) HandleEvents(writer http.ResponseWriter, req *http.Request
 	writer.WriteHeader(http.StatusAccepted)
 }
 
-func (p *eventParser) Start() func(context.Context) error {
+func (p *EventParser) Start() func(context.Context) error {
 
 	return func(ctx context.Context) error {
 
@@ -129,7 +129,7 @@ func (p *eventParser) Start() func(context.Context) error {
 	}
 }
 
-func (p *eventParser) parseEvents() {
+func (p *EventParser) parseEvents() {
 	var (
 		message *wrp.Message
 	)
@@ -148,7 +148,7 @@ func (p *eventParser) parseEvents() {
 	}
 }
 
-func (p *eventParser) parseDeviceID(message *wrp.Message) error {
+func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	var (
 		err      error
 		deviceID string
@@ -191,7 +191,7 @@ func (p *eventParser) parseDeviceID(message *wrp.Message) error {
 
 }
 
-func (p *eventParser) Stop() func(context.Context) error {
+func (p *EventParser) Stop() func(context.Context) error {
 	return func(ctx context.Context) error {
 		close(p.requestQueue.Load().(chan *wrp.Message))
 		p.wg.Wait()

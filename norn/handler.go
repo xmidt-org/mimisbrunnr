@@ -100,7 +100,7 @@ func (r *Registry) AddNorn(rw http.ResponseWriter, req *http.Request) (string, i
 }
 
 // DELETE '/norns/{id}'/
-func (r *Registry) RemoveNorn(rw http.ResponseWriter, req *http.Request) (norns model.Norn, err error) {
+func (r *Registry) RemoveNorn(rw http.ResponseWriter, req *http.Request) (model.Norn, error) {
 	nornID := mux.Vars(req)
 	id := nornID["id"]
 	owner := req.Header.Get("X-Midt-Owner")
@@ -117,13 +117,14 @@ func (r *Registry) RemoveNorn(rw http.ResponseWriter, req *http.Request) (norns 
 }
 
 // GET '/norns'
-func (r *Registry) GetAllNorns(rw http.ResponseWriter, req *http.Request) (norns []model.Norn, err error) {
+func (r *Registry) GetAllNorns(rw http.ResponseWriter, req *http.Request) ([]model.Norn, int) {
+	norns := []model.Norn{}
 	owner := req.Header.Get("X-Midt-Owner")
 	items, err := r.hookStore.GetItems(owner)
 	if err != nil {
-		return
+		return norns, http.StatusBadRequest
 	}
-	norns = []model.Norn{}
+
 	for _, item := range items {
 		norn, err := ConvertItemToNorn(item)
 		if err != nil {
@@ -132,7 +133,7 @@ func (r *Registry) GetAllNorns(rw http.ResponseWriter, req *http.Request) (norns
 		}
 		norns = append(norns, norn)
 	}
-	return norns, nil
+	return norns, http.StatusOK
 }
 
 func ConvertItemToNorn(item argus.Item) (model.Norn, error) {

@@ -42,9 +42,9 @@ type nornDispatcher struct {
 	dispatcher dispatch.D
 }
 
-type Listener interface {
-	Update(items []argus.Item)
-}
+// type Listener interface {
+// 	Update(items []argus.Item)
+// }
 
 // chrysom client listener
 func (m *Manager) Update(items []argus.Item) {

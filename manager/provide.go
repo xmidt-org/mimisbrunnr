@@ -32,7 +32,7 @@ type MangerIn struct {
 func Provide(in MangerIn) (*Manager, error) {
 	m, err := NewManager(in.dispatcherConfig, in.logger)
 	if err != nil {
-		return &Manager{}, err
+		return nil, err
 	}
 
 	return m, nil

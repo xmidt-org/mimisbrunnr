@@ -72,7 +72,6 @@ func (d Dispatcher) Start(_ context.Context) error {
 	if err != nil {
 		return err
 	}
-	// figure out how to close old session
 	d.SqsClient = sqs.New(sess)
 
 	go d.sendEvents()
@@ -158,7 +157,7 @@ func (d Dispatcher) send(msg *wrp.Message) {
 		sqsParams := &sqs.SendMessageInput{
 			MessageBody:  aws.String(string(jsonMsg)),
 			QueueUrl:     aws.String(d.Norn.Destination.AWSConfig.Sqs.QueueURL),
-			DelaySeconds: aws.Int64(3),
+			DelaySeconds: aws.Int64(d.Norn.Destination.AWSConfig.Sqs.DelaySeconds),
 		}
 		_, err = d.SqsClient.SendMessage(sqsParams)
 		if err != nil {

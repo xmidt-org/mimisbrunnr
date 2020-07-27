@@ -45,7 +45,6 @@ type AWSConfig struct {
 	AccessKey string
 	SecretKey string
 	ID        string
-	Env       string
 	Sqs       SQSConfig
 }
 

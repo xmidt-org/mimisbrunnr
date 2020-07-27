@@ -18,6 +18,7 @@
 package dispatch
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -119,10 +120,38 @@ func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport http.RoundTri
 		}
 		dispatcher.DestinationType = HttpType
 	} else {
+		err := validateAWSConfig(norn.Destination.AWSConfig)
+		if err != nil {
+			return nil, err
+		}
 		dispatcher.DestinationType = SqsType
 	}
 
 	return dispatcher, nil
+}
+
+func validateAWSConfig(config model.AWSConfig) error {
+	if config.AccessKey == "" {
+		return fmt.Errorf("invalid AWS accesskey")
+	}
+
+	if config.SecretKey == "" {
+		return fmt.Errorf("invalid AWS secretkey")
+	}
+
+	if config.ID == "" {
+		return fmt.Errorf("invalid AWS id")
+	}
+
+	if config.Sqs.QueueURL == "" {
+		return fmt.Errorf("invalid SQS queueUrl")
+	}
+
+	if config.Sqs.Region == "" {
+		return fmt.Errorf("invalid SQS region")
+	}
+
+	return nil
 }
 
 func NewEventWithID(event *wrp.Message, deviceID string) *eventWithID {

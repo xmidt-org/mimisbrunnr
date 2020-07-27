@@ -112,9 +112,12 @@ func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 			if p.measures != nil {
 				p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
 			}
+			return &Response{
+				response: http.StatusTooManyRequests,
+			}, nil
 		}
 		return &Response{
-			response: http.StatusAccepted,
+			response: http.StatusOK,
 		}, nil
 	}
 }

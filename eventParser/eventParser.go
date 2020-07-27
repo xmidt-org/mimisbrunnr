@@ -28,8 +28,11 @@ import (
 	"time"
 
 	"emperror.dev/emperror"
+	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	kithttp "github.com/go-kit/kit/transport/http"
 	db "github.com/xmidt-org/codex-db"
+	"github.com/xmidt-org/mimisbrunnr/norn"
 	"github.com/xmidt-org/svalinn/rules"
 	"github.com/xmidt-org/webpa-common/logging"
 	semaphore "github.com/xmidt-org/webpa-common/semaphore"
@@ -43,7 +46,7 @@ const (
 )
 
 type EventSender interface {
-	Send(event *wrp.Message, deviceID string) //send event to all dispatchers in map
+	Send(deviceID string, event *wrp.Message) //send event to all dispatchers in map
 }
 
 type Options struct {
@@ -61,6 +64,10 @@ type EventParser struct {
 	wg           sync.WaitGroup
 	opt          Options
 	sender       EventSender
+}
+
+type Response struct {
+	response int
 }
 
 func NewEventParser(sender EventSender, logger log.Logger, o Options) (*EventParser, error) {
@@ -86,36 +93,56 @@ func NewEventParser(sender EventSender, logger log.Logger, o Options) (*EventPar
 	return &eventParser, nil
 }
 
-func (p *EventParser) HandleEvents(writer http.ResponseWriter, req *http.Request) {
-	var message *wrp.Message
-	msgBytes, err := ioutil.ReadAll(req.Body)
-	req.Body.Close()
-	if err != nil {
-		logging.Error(p.logger).Log(logging.MessageKey(), "Could not read request body", logging.ErrorKey(), err.Error())
-		writer.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	err = wrp.NewDecoderBytes(msgBytes, wrp.Msgpack).Decode(&message)
-	if err != nil {
-		logging.Error(p.logger).Log(logging.MessageKey(), "Could not decode request body", logging.ErrorKey(), err.Error())
-		writer.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	// add message to queue
-	select {
-	case p.requestQueue.Load().(chan *wrp.Message) <- message:
-		if p.measures != nil {
-			p.measures.EventParsingQueue.Add(1.0)
+func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		var (
+			message *wrp.Message
+			ok      bool
+		)
+		if message, ok = request.(*wrp.Message); !ok {
+			return nil, norn.BadRequestError{Request: request}
 		}
-	default:
-		if p.measures != nil {
-			p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
-		}
-	}
 
-	writer.WriteHeader(http.StatusAccepted)
+		select {
+		case p.requestQueue.Load().(chan *wrp.Message) <- message:
+			if p.measures != nil {
+				p.measures.EventParsingQueue.Add(1.0)
+			}
+		default:
+			if p.measures != nil {
+				p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
+			}
+		}
+		return &Response{
+			response: http.StatusAccepted,
+		}, nil
+	}
+}
+
+func NewEventsEndpointDecode() kithttp.DecodeRequestFunc {
+	return func(ctx context.Context, req *http.Request) (interface{}, error) {
+		var message *wrp.Message
+		msgBytes, err := ioutil.ReadAll(req.Body)
+		req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		err = wrp.NewDecoderBytes(msgBytes, wrp.Msgpack).Decode(&message)
+		if err != nil {
+			return nil, err
+		}
+		return message, nil
+	}
+}
+
+func NewEventsEndpointEncode() kithttp.EncodeResponseFunc {
+	return func(ctx context.Context, resp http.ResponseWriter, value interface{}) error {
+		if value != nil {
+			resp.WriteHeader(value.(Response).response)
+		}
+		return nil
+	}
 }
 
 func (p *EventParser) Start() func(context.Context) error {
@@ -185,7 +212,7 @@ func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	}
 
 	// call manager
-	p.sender.Send(message, deviceID)
+	p.sender.Send(deviceID, message)
 
 	return err
 

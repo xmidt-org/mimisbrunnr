@@ -24,13 +24,15 @@ import (
 	"github.com/spf13/viper"
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
+	"github.com/xmidt-org/mimisbrunnr/manager"
 	"github.com/xmidt-org/mimisbrunnr/norn"
+	"github.com/xmidt-org/mimisbrunnr/routes"
 	"go.uber.org/fx"
 )
 
 const (
 	applicationName = "mimisbrunnr"
-	apiBase         = "norns"
+	apiBase         = "api/v1"
 )
 
 func main() {
@@ -60,12 +62,15 @@ func main() {
 			dispatch.ProvideMetrics,
 			eventParser.Provide,
 
-			viper.New(),
+			manager.Provide,
+			routes.Provide,
+
+			routes.ProvideServerChainFactory,
 		),
 		fx.Invoke(
-			BuildPrimaryRoutes,
-			BuildMetricsRoutes,
-			BuildHealthRoutes,
+			routes.BuildPrimaryRoutes,
+			routes.BuildMetricsRoutes,
+			routes.BuildHealthRoutes,
 		),
 	)
 	switch err := app.Err(); err {

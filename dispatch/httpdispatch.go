@@ -18,15 +18,12 @@
 package dispatch
 
 import (
-	"crypto/tls"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	aws "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/go-kit/kit/log"
 	"github.com/xmidt-org/mimisbrunnr/model"
@@ -88,16 +85,7 @@ const (
 	SqsType  = "sqs"
 )
 
-func NewTransport(dc DispatcherConfig) *http.Transport {
-	return &http.Transport{
-		TLSClientConfig:       &tls.Config{},
-		MaxIdleConnsPerHost:   dc.SenderConfig.NumWorkersPerSender,
-		ResponseHeaderTimeout: dc.SenderConfig.ResponseHeaderTimeout,
-		IdleConnTimeout:       dc.SenderConfig.IdleConnTimeout,
-	}
-}
-
-func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport *http.Transport) (D, error) {
+func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport http.RoundTripper) (D, error) {
 	if dc.QueueSize < defaultMinQueueSize {
 		dc.QueueSize = defaultMinQueueSize
 	}
@@ -125,18 +113,13 @@ func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport *http.Transpo
 	dispatcher.DispatchQueue.Store(make(chan *eventWithID, dc.QueueSize))
 
 	if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
+		_, err := url.ParseRequestURI(norn.Destination.HttpConfig.URL)
+		if err != nil {
+			return dispatcher, nil
+		}
 		dispatcher.DestinationType = HttpType
 	} else {
 		dispatcher.DestinationType = SqsType
-
-		sess, err := session.NewSession(&aws.Config{
-			Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
-			Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
-		})
-		if err != nil {
-			return dispatcher, err
-		}
-		dispatcher.SqsClient = sqs.New(sess)
 	}
 
 	return dispatcher, nil

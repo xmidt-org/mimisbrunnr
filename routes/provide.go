@@ -22,41 +22,37 @@ import (
 
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"github.com/xmidt-org/mimisbrunnr/manager"
-	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/mimisbrunnr/norn"
 	"go.uber.org/fx"
 )
 
 type HandlerIn struct {
 	fx.In
-
-	Registry *norn.Registry
-
-	Manager *manager.Manager
-
+	Registry    *norn.Registry
+	Manager     *manager.Manager
 	EventParser *eventParser.EventParser
 }
 
 type HandlerOut struct {
 	fx.Out
 
-	SetKeyHandler func(http.ResponseWriter, *http.Request) (string, int) `name:"setHandler"`
+	SetKeyHandler http.Handler `name:"setHandler"`
 
-	GetKeyHandler func(rw http.ResponseWriter, req *http.Request) (model.Norn, int) `name:"getHandler"`
+	GetKeyHandler http.Handler `name:"getHandler"`
 
-	DeleteKeyHandler func(rw http.ResponseWriter, req *http.Request) (model.Norn, error) `name:"deleteHandler"`
+	DeleteKeyHandler http.Handler `name:"deleteHandler"`
 
-	GetAllKeyHandler func(rw http.ResponseWriter, req *http.Request) ([]model.Norn, int) `name:"getAllHandler"`
+	GetAllKeyHandler http.Handler `name:"getAllHandler"`
 
-	EventsKeyHandler func(writer http.ResponseWriter, req *http.Request) `name:"eventHandler"`
+	EventsKeyHandler http.Handler `name:"eventHandler"`
 }
 
 func Provide(in HandlerIn) HandlerOut {
 	return HandlerOut{
-		SetKeyHandler:    in.Registry.AddNorn,
-		GetKeyHandler:    in.Manager.GetNorn,
-		DeleteKeyHandler: in.Registry.RemoveNorn,
-		GetAllKeyHandler: in.Registry.GetAllNorns,
-		EventsKeyHandler: in.EventParser.HandleEvents,
+		SetKeyHandler:    norn.NewHandler(norn.NewPostEndpoint(in.Registry), norn.NewPostEndpointDecode(), norn.NewSetEndpointEncode()),
+		GetAllKeyHandler: norn.NewHandler(norn.NewGetAllEndpoint(in.Registry), norn.NewGetAllEndpointDecode(), norn.NewSetEndpointEncode()),
+		DeleteKeyHandler: norn.NewHandler(norn.NewDeleteEndpoint(in.Registry), norn.NewDeleteEndpointDecode(), norn.NewSetEndpointEncode()),
+		GetKeyHandler:    norn.NewHandler(manager.NewGetEndpoint(in.Manager), manager.NewGetEndpointDecode(), norn.NewSetEndpointEncode()),
+		EventsKeyHandler: norn.NewHandler(eventParser.NewEventsEndpoint(in.EventParser), eventParser.NewEventsEndpointDecode(), eventParser.NewEventsEndpointEncode()),
 	}
 }

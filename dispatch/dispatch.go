@@ -27,10 +27,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
+	"reflect"
 	"strconv"
 	"time"
-
-	"net/http"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -54,7 +54,7 @@ type D interface {
 	Start(context.Context) error
 	Dispatch(deviceID string, msg *wrp.Message) error
 	Update(norn model.Norn)
-	Stop() func(context.Context) error
+	Stop(context.Context) error
 }
 
 // failureText is human readable text for the failure message
@@ -65,6 +65,16 @@ const FailureText = `Unfortunately, your endpoint is not able to keep up with th
 	`you have requested.`
 
 func (d Dispatcher) Start(_ context.Context) error {
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(d.Norn.Destination.AWSConfig.Sqs.Region),
+		Credentials: credentials.NewStaticCredentials(d.Norn.Destination.AWSConfig.ID, d.Norn.Destination.AWSConfig.AccessKey, d.Norn.Destination.AWSConfig.SecretKey),
+	})
+	if err != nil {
+		return err
+	}
+	// figure out how to close old session
+	d.SqsClient = sqs.New(sess)
+
 	go d.sendEvents()
 	return nil
 
@@ -157,6 +167,7 @@ func (d Dispatcher) send(msg *wrp.Message) {
 			return
 		}
 		url = d.Norn.Destination.AWSConfig.Sqs.QueueURL
+		d.Measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
 
 	case HttpType:
 		var (
@@ -210,10 +221,10 @@ func (d Dispatcher) send(msg *wrp.Message) {
 			}
 		}
 		url = d.Norn.Destination.HttpConfig.URL
-
-	default:
 		d.Measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
 
+	default:
+		d.Measures.DroppedNetworkErrCounter.Add(1.0)
 	}
 
 }
@@ -293,36 +304,39 @@ func (d Dispatcher) queueOverflow() {
 }
 
 func (d Dispatcher) Update(norn model.Norn) {
-	if d.Norn.TTL == norn.TTL {
-		return
-	} else {
-		d.Norn.TTL = norn.TTL
+	if d.Norn.ExpiresAt != norn.ExpiresAt {
+		d.Norn.ExpiresAt = norn.ExpiresAt
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
-		Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
-	})
-	if err != nil {
-		d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
-		return
+	if reflect.DeepEqual(d.Norn.Destination.AWSConfig, norn.Destination.AWSConfig) == false {
+		sess, err := session.NewSession(&aws.Config{
+			Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
+			Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
+		})
+		if err != nil {
+			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
+			return
+		}
+		d.SqsClient = sqs.New(sess)
+		d.Norn.Destination.AWSConfig = norn.Destination.AWSConfig
 	}
-	d.SqsClient = sqs.New(sess)
+
+	if d.Norn.Destination.HttpConfig.Secret != norn.Destination.HttpConfig.Secret {
+		d.Norn.Destination.HttpConfig.Secret = norn.Destination.HttpConfig.Secret
+	}
 
 }
 
-func (d Dispatcher) Stop() func(context.Context) error {
-	return func(ctx context.Context) error {
-		close(d.DispatchQueue.Load().(chan *eventWithID))
-		d.Wg.Wait()
+func (d Dispatcher) Stop(context.Context) error {
+	close(d.DispatchQueue.Load().(chan *eventWithID))
+	d.Wg.Wait()
 
-		d.Mutex.Lock()
-		d.DeliverUntil = time.Time{}
-		d.Measures.DeliverUntilGauge.Set(float64(d.DeliverUntil.Unix()))
-		d.Measures.EventQueueDepthGauge.Set(0.0)
-		d.Mutex.Unlock()
+	d.Mutex.Lock()
+	d.DeliverUntil = time.Time{}
+	d.Measures.DeliverUntilGauge.Set(float64(d.DeliverUntil.Unix()))
+	d.Measures.EventQueueDepthGauge.Set(0.0)
+	d.Mutex.Unlock()
 
-		close(d.DispatchQueue.Load().(chan *eventWithID))
-		return nil
-	}
+	close(d.DispatchQueue.Load().(chan *eventWithID))
+	return nil
 }

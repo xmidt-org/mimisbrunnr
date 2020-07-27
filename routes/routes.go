@@ -31,18 +31,6 @@ import (
 	"go.uber.org/fx"
 )
 
-// import (
-// 	"github.com/gorilla/mux"
-// 	"github.com/justinas/alice"
-// 	"github.com/prometheus/client_golang/prometheus"
-// 	"github.com/xmidt-org/argus/store"
-// 	"github.com/xmidt-org/themis/xhealth"
-// 	"github.com/xmidt-org/themis/xhttp/xhttpserver"
-// 	"github.com/xmidt-org/themis/xmetrics"
-// 	"github.com/xmidt-org/themis/xmetrics/xmetricshttp"
-// 	"go.uber.org/fx"
-// )
-
 var (
 	ServerLabel = "Mimisbrunnr"
 )

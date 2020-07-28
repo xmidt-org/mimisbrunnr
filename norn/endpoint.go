@@ -31,6 +31,7 @@ import (
 	"github.com/gorilla/mux"
 	argus "github.com/xmidt-org/argus/model"
 	"github.com/xmidt-org/mimisbrunnr/model"
+	"github.com/xmidt-org/mimisbrunnr/registry"
 	"github.com/xmidt-org/webpa-common/logging"
 )
 
@@ -46,12 +47,13 @@ func (bre BadRequestError) StatusCode() int {
 	return http.StatusBadRequest
 }
 
-type IdOwner struct {
+type IdOwnerItem struct {
 	ID    string
 	Owner string
+	Item  argus.Item
 }
 
-func NewPostEndpoint(r *Registry) endpoint.Endpoint {
+func NewPostEndpoint(r *registry.Registry) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
 			item argus.Item
@@ -61,7 +63,7 @@ func NewPostEndpoint(r *Registry) endpoint.Endpoint {
 			return nil, BadRequestError{Request: request}
 		}
 
-		nornID, err := r.hookStore.Push(item, "")
+		nornID, err := r.HookStore.Push(item, "")
 		return nornID, err
 
 	}
@@ -97,25 +99,58 @@ func NewPostEndpointDecode() kithttp.DecodeRequestFunc {
 	}
 }
 
-func NewDeleteEndpoint(r *Registry) endpoint.Endpoint {
+func NewPutEndpointDecoder() kithttp.DecodeRequestFunc {
+	return func(ctx context.Context, req *http.Request) (interface{}, error) {
+		nornID := mux.Vars(req)
+		id := nornID["id"]
+
+		payload, err := ioutil.ReadAll(req.Body)
+
+		nornReq, err := model.NewNornRequest(payload, req.RemoteAddr)
+		if err != nil {
+			return "", err
+		}
+
+		norn, err := model.NewNorn(nornReq, "")
+
+		nornPayload := map[string]interface{}{}
+		data, err := json.Marshal(&norn)
+		if err != nil {
+			return "", err
+		}
+		err = json.Unmarshal(data, &nornPayload)
+		if err != nil {
+			return "", err
+		}
+
+		nornItem := argus.Item{
+			Identifier: id,
+			Data:       nornPayload,
+			TTL:        norn.ExpiresAt,
+		}
+		return nornItem, nil
+	}
+}
+
+func NewDeleteEndpoint(r *registry.Registry) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
-			idOwner IdOwner
+			idOwner IdOwnerItem
 			ok      bool
 		)
-		if idOwner, ok = request.(IdOwner); !ok {
+		if idOwner, ok = request.(IdOwnerItem); !ok {
 			return nil, BadRequestError{Request: request}
 		}
 		if idOwner.ID == "" || idOwner.Owner == "" {
 			return nil, BadRequestError{Request: request}
 		}
-		item, err := r.hookStore.Remove(idOwner.ID, idOwner.Owner)
+		item, err := r.HookStore.Remove(idOwner.ID, idOwner.Owner)
 		if err != nil {
-			log.WithPrefix(r.logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to remove item", "item", item)
+			log.WithPrefix(r.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to remove item", "item", item)
 		}
 		norn, err := model.ConvertItemToNorn(item)
 		if err != nil {
-			log.WithPrefix(r.logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
+			log.WithPrefix(r.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
 		}
 		return norn, nil
 	}
@@ -128,25 +163,25 @@ func NewDeleteEndpointDecode() kithttp.DecodeRequestFunc {
 		id := nornID["id"]
 		owner := ""
 
-		return &IdOwner{
+		return &IdOwnerItem{
 			ID:    id,
 			Owner: owner,
 		}, nil
 	}
 }
 
-func NewGetAllEndpoint(r *Registry) endpoint.Endpoint {
+func NewGetAllEndpoint(r *registry.Registry) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
 			norns   []model.Norn
-			idOwner IdOwner
+			idOwner IdOwnerItem
 			ok      bool
 		)
-		if idOwner, ok = request.(IdOwner); !ok {
+		if idOwner, ok = request.(IdOwnerItem); !ok {
 			return nil, BadRequestError{Request: request}
 		}
 
-		items, err := r.hookStore.GetItems(idOwner.Owner)
+		items, err := r.HookStore.GetItems(idOwner.Owner)
 		if err != nil {
 			return norns, err
 		}
@@ -154,7 +189,7 @@ func NewGetAllEndpoint(r *Registry) endpoint.Endpoint {
 		for _, item := range items {
 			norn, err := model.ConvertItemToNorn(item)
 			if err != nil {
-				log.WithPrefix(r.logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
+				log.WithPrefix(r.Logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
 				continue
 			}
 			norns = append(norns, norn)
@@ -167,7 +202,7 @@ func NewGetAllEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		// use bascule stuff here for owner
 		owner := ""
-		return &IdOwner{
+		return &IdOwnerItem{
 			Owner: owner,
 		}, nil
 	}

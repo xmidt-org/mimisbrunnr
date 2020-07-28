@@ -15,21 +15,19 @@
  *
  */
 
-package norn
+package registry
 
 import (
 	"fmt"
 	"net/http"
 
-	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
-	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/xmidt-org/argus/chrysom"
 )
 
 type Registry struct {
-	hookStore *chrysom.Client
-	logger    log.Logger
+	HookStore *chrysom.Client
+	Logger    log.Logger
 }
 
 type RegistryConfig struct {
@@ -55,11 +53,7 @@ func NewRegistry(config RegistryConfig) (*Registry, error) {
 		config.Logger.Log("Chrysom Listener not set.")
 	}
 	return &Registry{
-		logger:    config.Logger,
-		hookStore: argus,
+		Logger:    config.Logger,
+		HookStore: argus,
 	}, nil
-}
-
-func NewHandler(endpoint endpoint.Endpoint, decode kithttp.DecodeRequestFunc, encode kithttp.EncodeResponseFunc) http.Handler {
-	return kithttp.NewServer(endpoint, decode, encode)
 }

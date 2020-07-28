@@ -110,9 +110,9 @@ type PrimaryRouter struct {
 	Handler store.Handler `name:"setHandler"`
 }
 
-type SetRoutesIn struct {
+type PostRoutesIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"setHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"postHandler"`
 }
 type GetRoutesIn struct {
 	fx.In
@@ -123,9 +123,9 @@ type DeleteRoutesIn struct {
 	Handler func(http.ResponseWriter, *http.Request) `name:"deleteHandler"`
 }
 
-type PostRoutesIn struct {
+type PutRoutesIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"postHandler"`
+	Handler func(http.ResponseWriter, *http.Request) `name:"putHandler"`
 }
 
 type GetAllRoutesIn struct {
@@ -138,10 +138,10 @@ type PostEventRouteIn struct {
 	Handler func(http.ResponseWriter, *http.Request) `name:"eventHandler"`
 }
 
-func BuildPrimaryRoutes(router PrimaryRouter, sin SetRoutesIn, gin GetRoutesIn, din DeleteRoutesIn, pin PostRoutesIn, gain GetAllRoutesIn, pein PostEventRouteIn) {
+func BuildPrimaryRoutes(router PrimaryRouter, pin PostRoutesIn, gin GetRoutesIn, din DeleteRoutesIn, puin PutRoutesIn, gain GetAllRoutesIn, pein PostEventRouteIn) {
 	if router.Handler != nil {
-		if sin.Handler != nil {
-			router.Router.HandleFunc("/norns", sin.Handler).Methods("PUT")
+		if pin.Handler != nil {
+			router.Router.HandleFunc("/norns", pin.Handler).Methods("POST")
 		}
 		if gin.Handler != nil {
 			router.Router.HandleFunc("/norns/{id}", gin.Handler).Methods("GET")
@@ -149,8 +149,8 @@ func BuildPrimaryRoutes(router PrimaryRouter, sin SetRoutesIn, gin GetRoutesIn, 
 		if din.Handler != nil {
 			router.Router.HandleFunc("/norns/{id}", din.Handler).Methods("DELETE")
 		}
-		if pin.Handler != nil {
-			router.Router.HandleFunc("/norns/{id}", pin.Handler).Methods("POST")
+		if puin.Handler != nil {
+			router.Router.HandleFunc("/norns/{id}", puin.Handler).Methods("PUT")
 		}
 		if gain.Handler != nil {
 			router.Router.HandleFunc("/norns", gain.Handler).Methods("GET")

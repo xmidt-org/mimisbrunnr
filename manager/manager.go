@@ -85,7 +85,7 @@ func (m *Manager) Update(items []argus.Item) {
 				newNorns = append(newNorns, nornDispatcher{norn: norn, dispatcher: dispatcher})
 				recentMap[id] = norn
 			} else {
-				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
+				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			}
 		}
 	}
@@ -118,11 +118,11 @@ func (m *Manager) Send(deviceID string, event *wrp.Message) {
 func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
-			idOwner norn.IdOwner
+			idOwner norn.IdOwnerItem
 			ok      bool
 			norndis nornDispatcher
 		)
-		if idOwner, ok = request.(norn.IdOwner); !ok {
+		if idOwner, ok = request.(norn.IdOwnerItem); !ok {
 			return nil, norn.BadRequestError{Request: request}
 		}
 		if norndis, ok = m.nornsDispatch[idOwner.ID]; ok {
@@ -137,7 +137,7 @@ func NewGetEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		nornID := mux.Vars(req)
 		id := nornID["id"]
-		return &norn.IdOwner{
+		return &norn.IdOwnerItem{
 			ID: id,
 		}, nil
 	}

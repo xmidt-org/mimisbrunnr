@@ -25,7 +25,7 @@ import (
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"github.com/xmidt-org/mimisbrunnr/manager"
-	"github.com/xmidt-org/mimisbrunnr/norn"
+	"github.com/xmidt-org/mimisbrunnr/registry"
 	"github.com/xmidt-org/mimisbrunnr/routes"
 	"go.uber.org/fx"
 )
@@ -52,17 +52,19 @@ func main() {
 				return dispatchConf, err
 			},
 
-			func(v *viper.Viper) (norn.RegistryConfig, error) {
-				var registryConf norn.RegistryConfig
+			manager.Provide,
+
+			func(v *viper.Viper, m *manager.Manager) (registry.RegistryConfig, error) {
+				var registryConf registry.RegistryConfig
 				err := v.Unmarshal(&registryConf)
+				registryConf.Listener = m.Update
 				return registryConf, err
 			},
 
-			norn.NewRegistry,
+			registry.NewRegistry,
 			dispatch.ProvideMetrics,
 			eventParser.Provide,
 
-			manager.Provide,
 			routes.Provide,
 
 			routes.ProvideServerChainFactory,

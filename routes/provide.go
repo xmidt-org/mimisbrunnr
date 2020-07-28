@@ -20,15 +20,17 @@ package routes
 import (
 	"net/http"
 
+	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"github.com/xmidt-org/mimisbrunnr/manager"
 	"github.com/xmidt-org/mimisbrunnr/norn"
+	"github.com/xmidt-org/mimisbrunnr/registry"
 	"go.uber.org/fx"
 )
 
 type HandlerIn struct {
 	fx.In
-	Registry    *norn.Registry
+	Registry    *registry.Registry
 	Manager     *manager.Manager
 	EventParser *eventParser.EventParser
 }
@@ -36,7 +38,7 @@ type HandlerIn struct {
 type HandlerOut struct {
 	fx.Out
 
-	SetKeyHandler http.Handler `name:"setHandler"`
+	PostKeyHandler http.Handler `name:"postHandler"`
 
 	GetKeyHandler http.Handler `name:"getHandler"`
 
@@ -44,15 +46,18 @@ type HandlerOut struct {
 
 	GetAllKeyHandler http.Handler `name:"getAllHandler"`
 
+	PutKeyHandler http.Handler `name:"putHandler"`
+
 	EventsKeyHandler http.Handler `name:"eventHandler"`
 }
 
 func Provide(in HandlerIn) HandlerOut {
 	return HandlerOut{
-		SetKeyHandler:    norn.NewHandler(norn.NewPostEndpoint(in.Registry), norn.NewPostEndpointDecode(), norn.NewSetEndpointEncode()),
-		GetAllKeyHandler: norn.NewHandler(norn.NewGetAllEndpoint(in.Registry), norn.NewGetAllEndpointDecode(), norn.NewSetEndpointEncode()),
-		DeleteKeyHandler: norn.NewHandler(norn.NewDeleteEndpoint(in.Registry), norn.NewDeleteEndpointDecode(), norn.NewSetEndpointEncode()),
-		GetKeyHandler:    norn.NewHandler(manager.NewGetEndpoint(in.Manager), manager.NewGetEndpointDecode(), norn.NewSetEndpointEncode()),
-		EventsKeyHandler: norn.NewHandler(eventParser.NewEventsEndpoint(in.EventParser), eventParser.NewEventsEndpointDecode(), eventParser.NewEventsEndpointEncode()),
+		PostKeyHandler:   kithttp.NewServer(norn.NewPostEndpoint(in.Registry), norn.NewPostEndpointDecode(), norn.NewSetEndpointEncode()),
+		GetAllKeyHandler: kithttp.NewServer(norn.NewGetAllEndpoint(in.Registry), norn.NewGetAllEndpointDecode(), norn.NewSetEndpointEncode()),
+		DeleteKeyHandler: kithttp.NewServer(norn.NewDeleteEndpoint(in.Registry), norn.NewDeleteEndpointDecode(), norn.NewSetEndpointEncode()),
+		GetKeyHandler:    kithttp.NewServer(manager.NewGetEndpoint(in.Manager), manager.NewGetEndpointDecode(), norn.NewSetEndpointEncode()),
+		PutKeyHandler:    kithttp.NewServer(norn.NewPostEndpoint(in.Registry), norn.NewPutEndpointDecoder(), norn.NewSetEndpointEncode()),
+		EventsKeyHandler: kithttp.NewServer(eventParser.NewEventsEndpoint(in.EventParser), eventParser.NewEventsEndpointDecode(), eventParser.NewEventsEndpointEncode()),
 	}
 }

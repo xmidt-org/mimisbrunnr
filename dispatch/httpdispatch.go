@@ -116,7 +116,7 @@ func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport http.RoundTri
 	if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
 		_, err := url.ParseRequestURI(norn.Destination.HttpConfig.URL)
 		if err != nil {
-			return dispatcher, nil
+			return dispatcher, err
 		}
 		dispatcher.DestinationType = HttpType
 	} else {

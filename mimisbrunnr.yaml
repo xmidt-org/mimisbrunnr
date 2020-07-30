@@ -172,7 +172,7 @@ log:
 ########################################
 
 # Registry Config for setting up argus
-RegistryConfig: 
+registryConfig: 
   argusConfig:
     bucket: "webhooks-caduceus"
     address: "http://argus:6600"
@@ -190,7 +190,7 @@ RegistryConfig:
 ########################################
 #   Dispatcher Related Configuration
 ########################################
-options:
+dispatcherConfig:
   queueSize: 100
   maxWorkers: 100
   senderConfig:

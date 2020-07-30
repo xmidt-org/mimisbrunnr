@@ -23,13 +23,13 @@ import (
 	"go.uber.org/fx"
 )
 
-type MangerIn struct {
+type ManagerIn struct {
 	fx.In
 	dispatcherConfig dispatch.DispatcherConfig
 	logger           log.Logger
 }
 
-func Provide(in MangerIn) (*Manager, error) {
+func Provide(in ManagerIn) (*Manager, error) {
 	m, err := NewManager(in.dispatcherConfig, in.logger)
 	if err != nil {
 		return nil, err

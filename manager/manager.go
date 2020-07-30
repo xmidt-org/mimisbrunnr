@@ -48,6 +48,7 @@ type nornDispatcher struct {
 
 func NewManager(dc dispatch.DispatcherConfig, logger log.Logger) (*Manager, error) {
 	return &Manager{
+		nornsDispatch:    map[string]nornDispatcher{},
 		dispatcherConfig: dc,
 		logger:           logger,
 	}, nil

@@ -31,7 +31,7 @@ require (
 	github.com/xmidt-org/svalinn v0.14.1
 	github.com/xmidt-org/themis v0.4.4
 	github.com/xmidt-org/webpa-common v1.10.5
-	github.com/xmidt-org/wrp-go v1.3.4 // indirect
+	github.com/xmidt-org/wrp-go v1.3.4
 	github.com/xmidt-org/wrp-go/v2 v2.0.1
 	github.com/xmidt-org/wrp-listener v0.1.2 // indirect
 	go.uber.org/fx v1.13.0

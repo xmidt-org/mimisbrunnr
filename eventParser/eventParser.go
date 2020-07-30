@@ -160,6 +160,7 @@ func (p *EventParser) Start() func(context.Context) error {
 }
 
 func (p *EventParser) parseEvents() {
+	defer p.wg.Done()
 	var (
 		message *wrp.Message
 	)

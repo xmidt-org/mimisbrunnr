@@ -40,7 +40,7 @@ type BadRequestError struct {
 }
 
 func (bre BadRequestError) Error() string {
-	return fmt.Sprintf("No vaule exists with request: %#v", bre)
+	return fmt.Sprintf("No value exists with request: %#v", bre)
 }
 
 func (bre BadRequestError) StatusCode() int {

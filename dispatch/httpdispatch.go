@@ -45,7 +45,6 @@ type SenderConfig struct {
 	IdleConnTimeout       time.Duration
 	CutOffPeriod          time.Duration
 	DeliveryInterval      time.Duration
-	DeliverUntil          time.Time
 }
 
 type Dispatcher struct {
@@ -63,7 +62,6 @@ type Dispatcher struct {
 	CutOffPeriod     time.Duration
 	FailureMsg       FailureMessage
 	Wg               sync.WaitGroup
-	DeliverUntil     time.Time
 	Norn             model.Norn
 	DestinationType  string
 	SqsClient        *sqs.SQS
@@ -77,8 +75,6 @@ type eventWithID struct {
 type FailureMessage struct {
 	Text         string `json:"text"`
 	CutOffPeriod string `json:"cut_off_period"`
-	QueueSize    int    `json:"queue_size"`
-	Workers      int    `json:"worker_count"`
 }
 
 const (
@@ -104,11 +100,8 @@ func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport http.RoundTri
 		FailureMsg: FailureMessage{
 			Text:         FailureText,
 			CutOffPeriod: dc.SenderConfig.CutOffPeriod.String(),
-			QueueSize:    dc.QueueSize,
-			Workers:      dc.NumWorkers,
 		},
-		DeliverUntil: dc.SenderConfig.DeliverUntil,
-		Norn:         norn,
+		Norn: norn,
 	}
 
 	dispatcher.DispatchQueue.Store(make(chan *eventWithID, dc.QueueSize))
@@ -116,7 +109,7 @@ func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport http.RoundTri
 	if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
 		_, err := url.ParseRequestURI(norn.Destination.HttpConfig.URL)
 		if err != nil {
-			return dispatcher, err
+			return dispatcher, nil
 		}
 		dispatcher.DestinationType = HttpType
 	} else {
@@ -148,7 +141,7 @@ func validateAWSConfig(config model.AWSConfig) error {
 	}
 
 	if config.Sqs.Region == "" {
-		return fmt.Errorf("invalid SQS region")
+
 	}
 
 	return nil

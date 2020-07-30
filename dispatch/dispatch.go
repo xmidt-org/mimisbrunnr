@@ -43,6 +43,7 @@ import (
 	"github.com/xmidt-org/webpa-common/logging"
 	"github.com/xmidt-org/webpa-common/xhttp"
 	"github.com/xmidt-org/wrp-go/v2"
+	// "github.com/xmidt-org/wrp-go/wrp"
 )
 
 const (
@@ -74,6 +75,7 @@ func (d Dispatcher) Start(_ context.Context) error {
 	}
 	d.SqsClient = sqs.New(sess)
 
+	d.Wg.Add(1)
 	go d.sendEvents()
 	return nil
 
@@ -93,8 +95,8 @@ func (d Dispatcher) Dispatch(deviceID string, msg *wrp.Message) error {
 	return nil
 }
 
-func (d Dispatcher) sendEvents() error {
-	defer d.Wg.Wait()
+func (d Dispatcher) sendEvents() {
+	defer d.Wg.Done()
 	queue := d.DispatchQueue.Load().(chan *eventWithID)
 	select {
 
@@ -105,7 +107,7 @@ func (d Dispatcher) sendEvents() error {
 		d.Measures.EventQueueDepthGauge.Add(-1.0)
 
 		d.Mutex.RLock()
-		deliverUntil := d.DeliverUntil
+		deliverUntil := time.Unix(0, d.Norn.ExpiresAt)
 		dropUntil := d.DropUntil
 		d.Mutex.RUnlock()
 
@@ -126,7 +128,7 @@ func (d Dispatcher) sendEvents() error {
 		d.Workers.Acquire()
 	}
 
-	return nil
+	return
 
 }
 
@@ -140,22 +142,35 @@ func (d *Dispatcher) empty(droppedCounter metrics.Counter) {
 
 // called to deliver event
 func (d Dispatcher) send(msg *wrp.Message) {
+	defer d.Wg.Done()
+	d.Mutex.Lock()
+	d.Measures.WorkersCount.Add(-1.0)
+	d.Mutex.Unlock()
 	var (
 		url   string
 		code  string
 		event string
 	)
+
+	// var buffer bytes.Buffer
+	// msgEncoder := wrp.NewEncoder(&buffer, wrp.JSON)
+	// err := msgEncoder.Encode(&msg)
+
+	buffer := bytes.NewBuffer([]byte{})
+	encoder := wrp.NewEncoder(buffer, wrp.JSON)
+	err := encoder.Encode(msg)
+	if err != nil {
+		d.Measures.DroppedInvalidConfig.Add(1.0)
+		d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to marshal event.")
+		return
+	}
+	body := buffer.Bytes()
+	payloadReader := bytes.NewReader(body)
+
 	switch d.DestinationType {
 	case SqsType:
-		// Send message
-		jsonMsg, err := json.Marshal(msg)
-		if err != nil {
-			d.Measures.DroppedInvalidConfig.Add(1.0)
-			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to marshal event.")
-			return
-		}
 		sqsParams := &sqs.SendMessageInput{
-			MessageBody:  aws.String(string(jsonMsg)),
+			MessageBody:  aws.String(string(body)),
 			QueueUrl:     aws.String(d.Norn.Destination.AWSConfig.Sqs.QueueURL),
 			DelaySeconds: aws.Int64(d.Norn.Destination.AWSConfig.Sqs.DelaySeconds),
 		}
@@ -172,10 +187,6 @@ func (d Dispatcher) send(msg *wrp.Message) {
 		var (
 			body []byte
 		)
-
-		jsonMsg, err := json.Marshal(msg)
-		payloadReader := bytes.NewReader(jsonMsg)
-
 		req, err := http.NewRequest("POST", d.Norn.Destination.HttpConfig.URL, payloadReader)
 		if nil != err {
 			d.Measures.DroppedInvalidConfig.Add(1.0)
@@ -328,14 +339,13 @@ func (d Dispatcher) Update(norn model.Norn) {
 
 func (d Dispatcher) Stop(context.Context) error {
 	close(d.DispatchQueue.Load().(chan *eventWithID))
-	d.Wg.Wait()
 
 	d.Mutex.Lock()
-	d.DeliverUntil = time.Time{}
-	d.Measures.DeliverUntilGauge.Set(float64(d.DeliverUntil.Unix()))
+	d.Measures.DeliverUntilGauge.Set(float64(d.Norn.ExpiresAt))
 	d.Measures.EventQueueDepthGauge.Set(0.0)
 	d.Mutex.Unlock()
 
-	close(d.DispatchQueue.Load().(chan *eventWithID))
+	d.Wg.Wait()
+
 	return nil
 }

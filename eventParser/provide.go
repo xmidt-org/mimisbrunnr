@@ -33,7 +33,7 @@ type EventParserIn struct {
 func Provide(in EventParserIn, opt Options) (*EventParser, error) {
 	ep, err := NewEventParser(in.EventSender, in.Logger, opt)
 	if err != nil {
-		return &EventParser{}, err
+		return nil, err
 	}
 
 	in.Lifecycle.Append(fx.Hook{

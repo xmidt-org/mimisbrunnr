@@ -142,19 +142,22 @@ func (d *Dispatcher) empty(droppedCounter metrics.Counter) {
 
 // called to deliver event
 func (d Dispatcher) send(msg *wrp.Message) {
-	defer d.Wg.Done()
-	d.Mutex.Lock()
-	d.Measures.WorkersCount.Add(-1.0)
-	d.Mutex.Unlock()
+	defer func() {
+		d.Wg.Done()
+		if r := recover(); nil != r {
+			d.Measures.DroppedPanicCounter.Add(1.0)
+			d.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "goroutine send() panicked",
+				"id", d.Norn.DeviceID, "panic", r)
+		}
+		d.Workers.Release()
+		d.Measures.WorkersCount.Add(-1.0)
+	}()
+
 	var (
 		url   string
 		code  string
 		event string
 	)
-
-	// var buffer bytes.Buffer
-	// msgEncoder := wrp.NewEncoder(&buffer, wrp.JSON)
-	// err := msgEncoder.Encode(&msg)
 
 	buffer := bytes.NewBuffer([]byte{})
 	encoder := wrp.NewEncoder(buffer, wrp.JSON)

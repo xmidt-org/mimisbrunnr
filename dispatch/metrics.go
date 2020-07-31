@@ -35,6 +35,7 @@ const (
 	IncomingContentTypeCounter    = "incoming_content_type_count"
 	ConsumerDeliverUntilGauge     = "consumer_deliver_until"
 	DeliveryCounter               = "delivery_count"
+	DroppedPanic                  = "dropped_panic_count"
 )
 
 func ProvideMetrics() fx.Option {
@@ -87,6 +88,12 @@ func ProvideMetrics() fx.Option {
 				Help: "Count of delivered messages to a url with a status code",
 			},
 		),
+		xmetrics.ProvideCounter(
+			prometheus.CounterOpts{
+				Name: DroppedPanic,
+				Help: "Count of dropped messages due to panic",
+			},
+		),
 	)
 }
 
@@ -103,6 +110,7 @@ type Measures struct {
 	DeliveryCounter          metrics.Counter
 	DroppedInvalidConfig     metrics.Counter
 	DroppedExpiredCounter    metrics.Counter
+	DroppedPanicCounter      metrics.Counter
 }
 
 func NewMeasures(p provider.Provider) *Measures {
@@ -119,5 +127,6 @@ func NewMeasures(p provider.Provider) *Measures {
 		DeliveryCounter:          p.NewCounter(DeliveryCounter),
 		DroppedInvalidConfig:     p.NewCounter(SlowConsumerDroppedMsgCounter),
 		DroppedExpiredCounter:    p.NewCounter(SlowConsumerDroppedMsgCounter),
+		DroppedPanicCounter:      p.NewCounter(DroppedPanic),
 	}
 }

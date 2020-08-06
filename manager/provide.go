@@ -29,7 +29,6 @@ type ManagerIn struct {
 	Logger           log.Logger
 }
 
-// func Provide(in ManagerIn) (*Manager, error) {
 func Provide(in ManagerIn) (*Manager, error) {
 	m, err := NewManager(in.DispatcherConfig, in.Logger)
 	if err != nil {

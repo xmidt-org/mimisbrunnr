@@ -45,10 +45,6 @@ const (
 	DefaultMinQueueSize = 5
 )
 
-// type EventSender interface {
-// 	Send(deviceID string, event *wrp.Message) //send event to all dispatchers in map
-// }
-
 type EventSenderFunc func(deviceID string, event *wrp.Message)
 
 type ParserConfig struct {

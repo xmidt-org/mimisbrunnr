@@ -23,7 +23,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/xmidt-org/argus/store"
 	"github.com/xmidt-org/themis/xhealth"
 	"github.com/xmidt-org/themis/xhttp/xhttpserver"
 	"github.com/xmidt-org/themis/xmetrics"
@@ -33,6 +32,11 @@ import (
 
 var (
 	ServerLabel = "Mimisbrunnr"
+)
+
+const (
+	applicationName = "mimisbrunnr"
+	apiBase         = "api/v1"
 )
 
 type ServerChainIn struct {
@@ -106,57 +110,57 @@ func ProvideServerChainFactory(in ServerChainIn) xhttpserver.ChainFactory {
 
 type PrimaryRouter struct {
 	fx.In
-	Router  *mux.Router   `name:"servers.primary"`
-	Handler store.Handler `name:"setHandler"`
+	Router  *mux.Router  `name:"servers.primary"`
+	Handler http.Handler `name:"postHandler"`
 }
 
 type PostRoutesIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"postHandler"`
+	Handler http.Handler `name:"postHandler"`
 }
 type GetRoutesIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"getHandler"`
+	Handler http.Handler `name:"getHandler"`
 }
 type DeleteRoutesIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"deleteHandler"`
+	Handler http.Handler `name:"deleteHandler"`
 }
 
 type PutRoutesIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"putHandler"`
+	Handler http.Handler `name:"putHandler"`
 }
 
 type GetAllRoutesIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"getAllHandler"`
+	Handler http.Handler `name:"getAllHandler"`
 }
 
 type PostEventRouteIn struct {
 	fx.In
-	Handler func(http.ResponseWriter, *http.Request) `name:"eventHandler"`
+	Handler http.Handler `name:"eventHandler"`
 }
 
 func BuildPrimaryRoutes(router PrimaryRouter, pin PostRoutesIn, gin GetRoutesIn, din DeleteRoutesIn, puin PutRoutesIn, gain GetAllRoutesIn, pein PostEventRouteIn) {
 	if router.Handler != nil {
 		if pin.Handler != nil {
-			router.Router.HandleFunc("/norns", pin.Handler).Methods("POST")
+			router.Router.Handle("/norns", pin.Handler).Methods("POST")
 		}
 		if gin.Handler != nil {
-			router.Router.HandleFunc("/norns/{id}", gin.Handler).Methods("GET")
+			router.Router.Handle("/norns/{id}", gin.Handler).Methods("GET")
 		}
 		if din.Handler != nil {
-			router.Router.HandleFunc("/norns/{id}", din.Handler).Methods("DELETE")
+			router.Router.Handle("/norns/{id}", din.Handler).Methods("DELETE")
 		}
 		if puin.Handler != nil {
-			router.Router.HandleFunc("/norns/{id}", puin.Handler).Methods("PUT")
+			router.Router.Handle("/norns/{id}", puin.Handler).Methods("PUT")
 		}
 		if gain.Handler != nil {
-			router.Router.HandleFunc("/norns", gain.Handler).Methods("GET")
+			router.Router.Handle("/norns", gain.Handler).Methods("GET")
 		}
 		if pein.Handler != nil {
-			router.Router.HandleFunc("/events", pein.Handler).Methods("POST")
+			router.Router.Handle("/events", pein.Handler).Methods("POST")
 		}
 	}
 }

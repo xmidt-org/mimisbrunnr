@@ -26,12 +26,12 @@ type EventParserIn struct {
 	fx.In
 
 	Lifecycle   fx.Lifecycle
-	EventSender EventSender
+	EventSender EventSenderFunc
 	Logger      log.Logger
 }
 
-func Provide(in EventParserIn, opt Options) (*EventParser, error) {
-	ep, err := NewEventParser(in.EventSender, in.Logger, opt)
+func Provide(in EventParserIn, opt ParserConfig) (*EventParser, error) {
+	ep, err := NewEventParser(in.EventSender, &in.Logger, opt)
 	if err != nil {
 		return nil, err
 	}

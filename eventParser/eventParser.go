@@ -45,11 +45,13 @@ const (
 	DefaultMinQueueSize = 5
 )
 
-type EventSender interface {
-	Send(deviceID string, event *wrp.Message) //send event to all dispatchers in map
-}
+// type EventSender interface {
+// 	Send(deviceID string, event *wrp.Message) //send event to all dispatchers in map
+// }
 
-type Options struct {
+type EventSenderFunc func(deviceID string, event *wrp.Message)
+
+type ParserConfig struct {
 	QueueSize  int
 	MaxWorkers int
 	RegexRules []rules.RuleConfig
@@ -62,15 +64,15 @@ type EventParser struct {
 	logger       log.Logger
 	measures     *Measures
 	wg           sync.WaitGroup
-	opt          Options
-	sender       EventSender
+	opt          ParserConfig
+	sender       EventSenderFunc
 }
 
 type Response struct {
 	response int
 }
 
-func NewEventParser(sender EventSender, logger log.Logger, o Options) (*EventParser, error) {
+func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig) (*EventParser, error) {
 	if o.MaxWorkers < MinMaxWorkers {
 		o.MaxWorkers = MinMaxWorkers
 	}
@@ -216,7 +218,7 @@ func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	}
 
 	// call manager
-	p.sender.Send(deviceID, message)
+	p.sender(deviceID, message)
 
 	return err
 

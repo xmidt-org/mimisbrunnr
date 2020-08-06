@@ -28,27 +28,60 @@ region:
 # (Optional)
 flavor:
 
-########################################
-#   Primary Endpoint Configuration
-########################################
 
-# primary defines the details needed for the primary endpoint.  The
-# primary endpoint accepts requests for events for a specific device id.
-primary:
-  # address provides the port number for the endpoint to bind to.
-  # ":443" is ideal, but may require some special handling due to it being
-  # a reserved (by the kernel) port.
-  address: ":5000"
-  # HTTPS/TLS 
-  #
-  # certificateFile provides the public key and CA chain in PEM format if
-  # TLS is used.  Note: the certificate needs to match the fqdn for clients
-  # to accept without issue.
-  #
-  # keyFile provides the private key that matches the certificateFile
-  # (Optional)
-  # certificateFile: "/etc/gungnir/public.pem"
-  # keyFile: "/etc/gungnir/private.pem"
+servers:
+  primary:
+    address: :6600
+    disableHTTPKeepAlives: true
+    header:
+      X-Midt-Server:
+        - mimisbrunnr
+      X-Midt-Version:
+        - development
+  metrics:
+    address: :6601
+    disableHTTPKeepAlives: true
+    header:
+      X-Midt-Server:
+        - mimisbrunnr
+      X-Midt-Version:
+        - development
+  health:
+    address: :6602
+    disableHTTPKeepAlives: true
+    header:
+      X-Midt-Server:
+        - mimisbrunnr
+      X-Midt-Version:
+        - development
+
+prometheus:
+  defaultNamespace: codex
+  defaultSubsystem: mimisbrunnr
+  constLabels:
+    development: "true"
+
+# ########################################
+# #   Primary Endpoint Configuration
+# ########################################
+
+# # primary defines the details needed for the primary endpoint.  The
+# # primary endpoint accepts requests for events for a specific device id.
+# primary:
+#   # address provides the port number for the endpoint to bind to.
+#   # ":443" is ideal, but may require some special handling due to it being
+#   # a reserved (by the kernel) port.
+#   address: ":5000"
+#   # HTTPS/TLS 
+#   #
+#   # certificateFile provides the public key and CA chain in PEM format if
+#   # TLS is used.  Note: the certificate needs to match the fqdn for clients
+#   # to accept without issue.
+#   #
+#   # keyFile provides the private key that matches the certificateFile
+#   # (Optional)
+#   # certificateFile: "/etc/gungnir/public.pem"
+#   # keyFile: "/etc/gungnir/private.pem"
 
 ########################################
 #   Health Endpoint Configuration
@@ -66,47 +99,47 @@ health:
   # information.
   endpoint: "/health"
 
-########################################
-#   Debugging/Pprof Configuration
-########################################
+# ########################################
+# #   Debugging/Pprof Configuration
+# ########################################
 
-# pprof defines the details needed for the pprof debug endpoint.
-# (Optional)
-pprof:
-  # address provides the port number for the endpoint to bind to.
-  address: ":5002"
+# # pprof defines the details needed for the pprof debug endpoint.
+# # (Optional)
+# pprof:
+#   # address provides the port number for the endpoint to bind to.
+#   address: ":5002"
 
-########################################
-#   Metrics Configuration
-########################################
+# ########################################
+# #   Metrics Configuration
+# ########################################
 
-# metric defines the details needed for the prometheus metrics endpoint
-# (Optional)
-metric:
-  # address provides the port number for the endpoint to bind to.  Port 9389
-  # was chosen because it does not conflict with any of the other prometheus
-  # metrics or other machines in the xmidt cluster.  You may use any port you
-  # wish.
-  address: ":5003"
+# # metric defines the details needed for the prometheus metrics endpoint
+# # (Optional)
+# metric:
+#   # address provides the port number for the endpoint to bind to.  Port 9389
+#   # was chosen because it does not conflict with any of the other prometheus
+#   # metrics or other machines in the xmidt cluster.  You may use any port you
+#   # wish.
+#   address: ":5003"
 
-  # metricsOptions provides the details needed to configure the prometheus
-  # metric data.  Metrics generally have the form:
-  #
-  # {namespace}_{subsystem}_{metric}
-  #
-  # so if you use the suggested value below, your metrics are prefixed like
-  # this:
-  #
-  # xmidt_mimisbrunnr_{metric}
-  #
-  # (Optional)
-  metricsOptions:
-    # namespace is the namespace of the metrics provided
-    # (Optional)
-    namespace: xmidt
-    # subsystem is the subsystem of the metrics provided
-    # (Optional)
-    subsystem: mimisbrunnr
+#   # metricsOptions provides the details needed to configure the prometheus
+#   # metric data.  Metrics generally have the form:
+#   #
+#   # {namespace}_{subsystem}_{metric}
+#   #
+#   # so if you use the suggested value below, your metrics are prefixed like
+#   # this:
+#   #
+#   # xmidt_mimisbrunnr_{metric}
+#   #
+#   # (Optional)
+#   metricsOptions:
+#     # namespace is the namespace of the metrics provided
+#     # (Optional)
+#     namespace: xmidt
+#     # subsystem is the subsystem of the metrics provided
+#     # (Optional)
+#     subsystem: mimisbrunnr
 
 ########################################
 #   Logging Related Configuration
@@ -174,17 +207,16 @@ log:
 # Registry Config for setting up argus
 registryConfig: 
   argusConfig:
-    bucket: "webhooks-caduceus"
+    bucket: "norns-mimisbrunnr"
     address: "http://argus:6600"
     pullInterval: "2s"
-    address: ""
-    # auth:
-    #   basic:
-    #   jwt:
-    #     requestHeaders:
-    #     authURL: ""
-    #     timeout: "1m"
-    #     buffer: "1m"
+    auth:
+      basic: "Basic dXNlcjpwYXNz"
+      # jwt:
+      #   requestHeaders:
+      #   authURL: ""
+      #   timeout: "1m"
+      #   buffer: "1m"
 
 
 ########################################
@@ -192,7 +224,7 @@ registryConfig:
 ########################################
 dispatcherConfig:
   queueSize: 100
-  maxWorkers: 100
+  numWorkers: 100
   senderConfig:
     numWorkersPerSender: 100
 
@@ -201,7 +233,7 @@ dispatcherConfig:
 ########################################
 #   Event Parser Related Configuration
 ########################################
-options:
+parserConfig:
   queueSize: 100
   maxWorkers: 100
   regexRules:

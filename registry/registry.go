@@ -23,7 +23,13 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/xmidt-org/argus/chrysom"
+	"go.uber.org/fx"
 )
+
+type RegistryIn struct {
+	fx.In
+	RegistryConfig RegistryConfig
+}
 
 type Registry struct {
 	HookStore *chrysom.Client
@@ -42,18 +48,17 @@ func jsonResponse(rw http.ResponseWriter, code int, msg string) {
 	rw.Write([]byte(fmt.Sprintf(`{"message":"%s"}`, msg)))
 }
 
-func NewRegistry(config RegistryConfig) (*Registry, error) {
-	argus, err := chrysom.CreateClient(config.ArgusConfig, chrysom.WithLogger(config.Logger))
+func NewRegistry(in RegistryIn) (*Registry, error) {
+
+	argus, err := chrysom.CreateClient(in.RegistryConfig.ArgusConfig, chrysom.WithLogger(in.RegistryConfig.Logger))
 	if err != nil {
 		return nil, err
 	}
-	if config.Listener != nil {
-		argus.SetListener(config.Listener)
-	} else {
-		config.Logger.Log("Chrysom Listener not set.")
+	if in.RegistryConfig.Listener != nil {
+		argus.SetListener(in.RegistryConfig.Listener)
 	}
 	return &Registry{
-		Logger:    config.Logger,
+		Logger:    in.RegistryConfig.Logger,
 		HookStore: argus,
 	}, nil
 }

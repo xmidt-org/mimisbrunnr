@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net/http"
+	"sync"
 
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
@@ -39,6 +40,7 @@ type Manager struct {
 	nornsDispatch    map[string]nornDispatcher
 	dispatcherConfig dispatch.DispatcherConfig
 	logger           log.Logger
+	mutex            sync.RWMutex
 }
 
 type nornDispatcher struct {
@@ -101,7 +103,9 @@ func (m *Manager) Update(items []argus.Item) {
 	}
 
 	for _, norndis := range newNorns {
+		m.mutex.Lock()
 		m.nornsDispatch[norndis.norn.DeviceID] = norndis
+		m.mutex.Unlock()
 	}
 
 	for _, dispatcher := range oldNorns {
@@ -111,9 +115,11 @@ func (m *Manager) Update(items []argus.Item) {
 }
 
 func (m *Manager) Send(deviceID string, event *wrp.Message) {
+	m.mutex.RLock()
 	for _, nd := range m.nornsDispatch {
 		nd.dispatcher.Dispatch(deviceID, event)
 	}
+	m.mutex.Unlock()
 }
 
 func NewGetEndpoint(m *Manager) endpoint.Endpoint {

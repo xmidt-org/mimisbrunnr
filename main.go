@@ -116,6 +116,11 @@ func main() {
 				err := v.UnmarshalKey("dispatcherConfig", &config)
 				return *config, err
 			},
+			func(v *viper.Viper) (dispatch.FilterConfig, error) {
+				config := new(dispatch.FilterConfig)
+				err := v.UnmarshalKey("filterConfig", &config)
+				return *config, err
+			},
 			manager.Provide,
 			func(v *viper.Viper, m *manager.Manager) (registry.RegistryConfig, error) {
 				config := new(registry.RegistryConfig)

@@ -245,3 +245,12 @@ parserConfig:
         storePayload: true
         ruleTTL: 30s
         eventType: "State"
+
+
+########################################
+#   Filter Related Configuration
+########################################
+filterConfig:
+  queueSize: 500
+  senderConfig:
+    numWorkersPerSender: 100

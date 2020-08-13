@@ -23,27 +23,22 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"reflect"
 	"strconv"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/go-kit/kit/metrics"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/logging"
 	"github.com/xmidt-org/webpa-common/xhttp"
 	"github.com/xmidt-org/wrp-go/v2"
-	// "github.com/xmidt-org/wrp-go/wrp"
 )
 
 const (
@@ -53,7 +48,7 @@ const (
 
 type D interface {
 	Start(context.Context) error
-	Dispatch(deviceID string, msg *wrp.Message) error
+	Send(*wrp.Message)
 	Update(norn model.Norn)
 	Stop(context.Context) error
 }
@@ -75,73 +70,12 @@ func (d Dispatcher) Start(_ context.Context) error {
 	}
 	d.SqsClient = sqs.New(sess)
 
-	d.Wg.Add(1)
-	go d.sendEvents()
 	return nil
 
-}
-
-func (d Dispatcher) Dispatch(deviceID string, msg *wrp.Message) error {
-	if deviceID == d.Norn.DeviceID {
-		en := NewEventWithID(msg, deviceID)
-		select {
-		case d.DispatchQueue.Load().(chan *eventWithID) <- en:
-			d.Measures.EventQueueDepthGauge.Add(1.0)
-		default:
-			d.queueOverflow()
-			d.Measures.DroppedQueueCount.Add(1.0)
-		}
-	}
-	return nil
-}
-
-func (d Dispatcher) sendEvents() {
-	defer d.Wg.Done()
-	queue := d.DispatchQueue.Load().(chan *eventWithID)
-	select {
-
-	case en, ok := <-queue:
-		if !ok {
-			break
-		}
-		d.Measures.EventQueueDepthGauge.Add(-1.0)
-
-		d.Mutex.RLock()
-		deliverUntil := time.Unix(0, d.Norn.ExpiresAt)
-		dropUntil := d.DropUntil
-		d.Mutex.RUnlock()
-
-		now := time.Now()
-
-		if now.Before(dropUntil) {
-			d.Measures.DroppedCutoffCounter.Add(1.0)
-		}
-		if now.After(deliverUntil) {
-			d.Measures.DroppedExpiredCounter.Add(1.0)
-		}
-
-		d.Workers.Acquire()
-		d.Measures.WorkersCount.Add(1.0)
-		go d.send(en.Event)
-	}
-	for i := 0; i < d.MaxWorkers; i++ {
-		d.Workers.Acquire()
-	}
-
-	return
-
-}
-
-func (d *Dispatcher) empty(droppedCounter metrics.Counter) {
-	droppedMsgs := d.DispatchQueue.Load().(chan *eventWithID)
-	d.DispatchQueue.Store(make(chan *wrp.Message, d.QueueSize))
-	droppedCounter.Add(float64(len(droppedMsgs)))
-	d.Measures.EventQueueDepthGauge.Set(0.0)
-	return
 }
 
 // called to deliver event
-func (d Dispatcher) send(msg *wrp.Message) {
+func (d Dispatcher) Send(msg *wrp.Message) {
 	defer func() {
 		d.Wg.Done()
 		if r := recover(); nil != r {
@@ -242,80 +176,6 @@ func (d Dispatcher) send(msg *wrp.Message) {
 
 }
 
-// called if queue is filled
-func (d Dispatcher) queueOverflow() {
-
-	d.Mutex.Lock()
-	if time.Now().Before(d.DropUntil) {
-		d.Mutex.Unlock()
-		return
-	}
-	d.DropUntil = time.Now().Add(d.CutOffPeriod)
-	d.Measures.DropUntilGauge.Set(float64(d.DropUntil.Unix()))
-	secret := d.Norn.Destination.HttpConfig.Secret
-	failureMsg := d.FailureMsg
-	failureURL := d.Norn.Destination.HttpConfig.FailureURL
-	d.Mutex.Unlock()
-
-	var (
-		errorLog = log.WithPrefix(d.Logger, level.Key(), level.ErrorValue())
-	)
-
-	d.Measures.CutOffCounter.Add(1.0)
-
-	// We empty the queue but don't close the channel, because we're not
-	// shutting down.
-	d.empty(d.Measures.DroppedCutoffCounter)
-
-	msg, err := json.Marshal(failureMsg)
-	if nil != err {
-		errorLog.Log(logging.MessageKey(), "Cut-off notification json.Marshal failed", "failureMessage", d.FailureMsg,
-			"for", d.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
-		return
-	}
-
-	// if no URL to send cut off notification to, do nothing
-	if "" == failureURL {
-		return
-	}
-
-	// Send a "you've been cut off" warning message
-	payload := bytes.NewReader(msg)
-	req, err := http.NewRequest("POST", failureURL, payload)
-	if nil != err {
-		// Failure
-		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
-			failureURL, "for", d.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	if "" != secret {
-		h := hmac.New(sha1.New, []byte(secret))
-		h.Write(msg)
-		sig := fmt.Sprintf("sha1=%s", hex.EncodeToString(h.Sum(nil)))
-		req.Header.Set("X-Codex-Signature", sig)
-	}
-
-	//  record content type, json.
-	d.Measures.ContentTypeCounter.With("content_type", "json").Add(1.0)
-	resp, err := d.Sender(req)
-	if nil != err {
-		// Failure
-		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
-			failureURL, "for", d.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
-		return
-	}
-
-	if nil == resp {
-		// Failure
-		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification, nil response",
-			"notification", failureURL)
-		return
-	}
-
-}
-
 func (d Dispatcher) Update(norn model.Norn) {
 	if d.Norn.ExpiresAt != norn.ExpiresAt {
 		d.Norn.ExpiresAt = norn.ExpiresAt
@@ -341,14 +201,9 @@ func (d Dispatcher) Update(norn model.Norn) {
 }
 
 func (d Dispatcher) Stop(context.Context) error {
-	close(d.DispatchQueue.Load().(chan *eventWithID))
-
 	d.Mutex.Lock()
 	d.Measures.DeliverUntilGauge.Set(float64(d.Norn.ExpiresAt))
-	d.Measures.EventQueueDepthGauge.Set(0.0)
 	d.Mutex.Unlock()
-
-	d.Wg.Wait()
 
 	return nil
 }

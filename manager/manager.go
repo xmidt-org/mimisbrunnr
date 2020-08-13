@@ -37,21 +37,24 @@ import (
 )
 
 type Manager struct {
-	nornsDispatch    map[string]nornDispatcher
+	nornFilter       map[string]filterDispatcher
 	dispatcherConfig dispatch.DispatcherConfig
+	filterConfig     dispatch.FilterConfig
 	logger           log.Logger
 	mutex            sync.RWMutex
 }
 
-type nornDispatcher struct {
+type filterDispatcher struct {
 	norn       model.Norn
 	dispatcher dispatch.D
+	filter     dispatch.F
 }
 
-func NewManager(dc dispatch.DispatcherConfig, logger log.Logger) (*Manager, error) {
+func NewManager(dc dispatch.DispatcherConfig, fc dispatch.FilterConfig, logger log.Logger) (*Manager, error) {
 	return &Manager{
-		nornsDispatch:    map[string]nornDispatcher{},
+		nornFilter:       map[string]filterDispatcher{},
 		dispatcherConfig: dc,
+		filterConfig:     fc,
 		logger:           logger,
 	}, nil
 }
@@ -69,8 +72,8 @@ func NewTransport(dc dispatch.DispatcherConfig) http.RoundTripper {
 // chrysom client listener
 func (m *Manager) Update(items []argus.Item) {
 	recentMap := make(map[string]model.Norn)
-	newNorns := []nornDispatcher{}
-	oldNorns := []dispatch.D{}
+	newNorns := []filterDispatcher{}
+	oldNorns := []dispatch.F{}
 
 	transport := NewTransport(m.dispatcherConfig)
 
@@ -80,44 +83,55 @@ func (m *Manager) Update(items []argus.Item) {
 		if err != nil {
 			log.WithPrefix(m.logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
 		}
-		if _, ok := m.nornsDispatch[id]; ok {
+		if _, ok := m.nornFilter[id]; ok {
 			recentMap[id] = norn
 		} else {
 			dispatcher, err := dispatch.NewDispatcher(m.dispatcherConfig, norn, transport)
+			if err != nil {
+				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+			}
+			filter, err := dispatch.NewFilter(m.filterConfig, id, dispatcher, norn, transport)
+			if err != nil {
+				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+			}
 			if err == nil {
-				newNorns = append(newNorns, nornDispatcher{norn: norn, dispatcher: dispatcher})
+				newNorns = append(newNorns, filterDispatcher{norn: norn, filter: filter})
 				recentMap[id] = norn
 			} else {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			}
+
 		}
 	}
 
-	for i, norndis := range m.nornsDispatch {
+	for i, filterdis := range m.nornFilter {
 		if val, ok := recentMap[i]; !ok {
-			oldNorns = append(oldNorns, norndis.dispatcher)
-			delete(m.nornsDispatch, i)
+			oldNorns = append(oldNorns, filterdis.filter)
+			delete(m.nornFilter, i)
 		} else {
-			norndis.dispatcher.Update(val)
+			filterdis.dispatcher.Update(val)
 		}
 	}
 
-	for _, norndis := range newNorns {
+	for _, filterdis := range newNorns {
 		m.mutex.Lock()
-		m.nornsDispatch[norndis.norn.DeviceID] = norndis
+		m.nornFilter[filterdis.norn.DeviceID] = filterdis
 		m.mutex.Unlock()
 	}
 
 	for _, dispatcher := range oldNorns {
 		dispatcher.Stop(nil)
 	}
+	for _, filter := range oldNorns {
+		filter.Stop(nil)
+	}
 
 }
 
 func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.RLock()
-	for _, nd := range m.nornsDispatch {
-		nd.dispatcher.Dispatch(deviceID, event)
+	for _, fd := range m.nornFilter {
+		fd.filter.Filter(event)
 	}
 	m.mutex.Unlock()
 }
@@ -125,17 +139,17 @@ func (m *Manager) Send(deviceID string, event *wrp.Message) {
 func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
-			idOwner norn.IdOwnerItem
-			ok      bool
-			norndis nornDispatcher
+			idOwner    norn.IdOwnerItem
+			ok         bool
+			nornFilter filterDispatcher
 		)
 		if idOwner, ok = request.(norn.IdOwnerItem); !ok {
 			return nil, norn.BadRequestError{Request: request}
 		}
-		if norndis, ok = m.nornsDispatch[idOwner.ID]; ok {
-			return norndis.norn, nil
+		if nornFilter, ok = m.nornFilter[idOwner.ID]; ok {
+			return nornFilter.norn, nil
 		}
-		return norndis.norn, nil
+		return nornFilter.norn, nil
 	}
 
 }

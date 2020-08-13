@@ -22,14 +22,12 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/go-kit/kit/log"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/semaphore"
-	"github.com/xmidt-org/wrp-go/v2"
 )
 
 type DispatcherConfig struct {
@@ -48,28 +46,17 @@ type SenderConfig struct {
 }
 
 type Dispatcher struct {
-	DispatchQueue    atomic.Value
 	Measures         *Measures
 	Workers          semaphore.Interface
-	MaxWorkers       int
 	Logger           log.Logger
 	DeliveryRetries  int
 	DeliveryInterval time.Duration
-	QueueSize        int
 	Sender           func(*http.Request) (*http.Response, error)
 	Mutex            sync.RWMutex
-	DropUntil        time.Time
-	CutOffPeriod     time.Duration
-	FailureMsg       FailureMessage
 	Wg               sync.WaitGroup
 	Norn             model.Norn
 	DestinationType  string
 	SqsClient        *sqs.SQS
-}
-
-type eventWithID struct {
-	Event    *wrp.Message
-	DeviceID string
 }
 
 type FailureMessage struct {
@@ -92,19 +79,8 @@ func NewDispatcher(dc DispatcherConfig, norn model.Norn, transport http.RoundTri
 	}
 
 	dispatcher := Dispatcher{
-		MaxWorkers: dc.NumWorkers,
-		QueueSize:  dc.QueueSize,
-		Sender: (&http.Client{
-			Transport: transport,
-		}).Do,
-		FailureMsg: FailureMessage{
-			Text:         FailureText,
-			CutOffPeriod: dc.SenderConfig.CutOffPeriod.String(),
-		},
 		Norn: norn,
 	}
-
-	dispatcher.DispatchQueue.Store(make(chan *eventWithID, dc.QueueSize))
 
 	if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
 		_, err := url.ParseRequestURI(norn.Destination.HttpConfig.URL)
@@ -141,15 +117,8 @@ func validateAWSConfig(config model.AWSConfig) error {
 	}
 
 	if config.Sqs.Region == "" {
-
+		return fmt.Errorf("invalid SQS region")
 	}
 
 	return nil
-}
-
-func NewEventWithID(event *wrp.Message, deviceID string) *eventWithID {
-	return &eventWithID{
-		Event:    event,
-		DeviceID: deviceID,
-	}
 }

@@ -108,7 +108,7 @@ func (m *Manager) Update(items []argus.Item) {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			}
 			if err == nil {
-				newNorns = append(newNorns, filterDispatcher{norn: norn, filter: filter})
+				newNorns = append(newNorns, filterDispatcher{norn: norn, filter: filter, dispatcher: dispatcher})
 				recentMap[id] = norn
 			} else {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
@@ -133,9 +133,6 @@ func (m *Manager) Update(items []argus.Item) {
 		m.mutex.Unlock()
 	}
 
-	for _, dispatcher := range oldNorns {
-		dispatcher.Stop(nil)
-	}
 	for _, filter := range oldNorns {
 		filter.Stop(nil)
 	}

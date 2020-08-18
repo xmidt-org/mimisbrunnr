@@ -41,12 +41,12 @@ import (
 
 type F interface {
 	Start(context.Context) error
-	Filter(event *wrp.Message)
+	Filter(deviceID string, event *wrp.Message)
+	Update(norn model.Norn)
 	Stop(context.Context) error
 }
 
 type Filter struct {
-	DeviceId     string
 	Norn         model.Norn
 	FilterQueue  atomic.Value
 	Wg           sync.WaitGroup
@@ -68,27 +68,18 @@ type FilterConfig struct {
 	SenderConfig SenderConfig
 }
 
-type FilterDispatcher struct {
-	Norn       model.Norn
-	Dispatcher D
-	Filter     F
-}
-
-func NewFilter(fc FilterConfig, deviceID string, dispatcher D, norn model.Norn, transport http.RoundTripper) (F, error) {
-	if deviceID == "" {
+func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Client) (F, error) {
+	if norn.DeviceID == "" {
 		return nil, fmt.Errorf("invalid deviceID")
 	}
 	filter := Filter{
-		DeviceId:   deviceID,
 		Dispatcher: dispatcher,
 		FailureMsg: FailureMessage{
 			Text:         FailureText,
 			CutOffPeriod: fc.SenderConfig.CutOffPeriod.String(),
 		},
-		Norn: norn,
-		Sender: (&http.Client{
-			Transport: transport,
-		}).Do,
+		Norn:   norn,
+		Sender: (sender).Do,
 	}
 	filter.FilterQueue.Store(make(chan *wrp.Message, fc.QueueSize))
 	return &filter, nil
@@ -110,8 +101,8 @@ func (f Filter) Stop(_ context.Context) error {
 	return nil
 }
 
-func (f *Filter) Filter(event *wrp.Message) {
-	if f.DeviceId == f.Norn.DeviceID {
+func (f *Filter) Filter(deviceID string, event *wrp.Message) {
+	if deviceID == f.Norn.DeviceID {
 		select {
 		case f.FilterQueue.Load().(chan *wrp.Message) <- event:
 			f.Measures.EventQueueDepthGauge.Add(1.0)
@@ -206,38 +197,49 @@ func (f *Filter) empty(droppedCounter metrics.Counter) {
 }
 
 func (f Filter) sendEvents() {
-	defer f.Wg.Done()
-	queue := f.FilterQueue.Load().(chan *wrp.Message)
-	select {
+Loop:
+	for {
+		defer f.Wg.Done()
+		queue := f.FilterQueue.Load().(chan *wrp.Message)
+		select {
 
-	case en, ok := <-queue:
-		if !ok {
-			break
+		case en, ok := <-queue:
+			if !ok {
+				break Loop
+			}
+			f.Measures.EventQueueDepthGauge.Add(-1.0)
+
+			f.Mutex.RLock()
+			deliverUntil := time.Unix(0, f.Norn.ExpiresAt)
+			dropUntil := f.DropUntil
+			f.Mutex.RUnlock()
+
+			now := time.Now()
+
+			if now.Before(dropUntil) {
+				f.Measures.DroppedCutoffCounter.Add(1.0)
+				continue
+			}
+			if now.After(deliverUntil) {
+				f.Measures.DroppedExpiredCounter.Add(1.0)
+				continue
+			}
+
+			f.Workers.Acquire()
+			f.Measures.WorkersCount.Add(1.0)
+			go f.Dispatcher.Send(en)
 		}
-		f.Measures.EventQueueDepthGauge.Add(-1.0)
-
-		f.Mutex.RLock()
-		deliverUntil := time.Unix(0, f.Norn.ExpiresAt)
-		dropUntil := f.DropUntil
-		f.Mutex.RUnlock()
-
-		now := time.Now()
-
-		if now.Before(dropUntil) {
-			f.Measures.DroppedCutoffCounter.Add(1.0)
-		}
-		if now.After(deliverUntil) {
-			f.Measures.DroppedExpiredCounter.Add(1.0)
+		for i := 0; i < f.MaxWorkers; i++ {
+			f.Workers.Acquire()
 		}
 
-		f.Workers.Acquire()
-		f.Measures.WorkersCount.Add(1.0)
-		go f.Dispatcher.Send(en)
+		return
 	}
-	for i := 0; i < f.MaxWorkers; i++ {
-		f.Workers.Acquire()
+
+}
+
+func (f Filter) Update(norn model.Norn) {
+	if f.Norn.ExpiresAt != norn.ExpiresAt {
+		f.Norn.ExpiresAt = norn.ExpiresAt
 	}
-
-	return
-
 }

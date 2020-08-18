@@ -105,7 +105,6 @@ type Measures struct {
 	CutOffCounter            metrics.Counter
 	DroppedCutoffCounter     metrics.Counter
 	ContentTypeCounter       metrics.Counter
-	DeliverUntilGauge        metrics.Gauge
 	DroppedNetworkErrCounter metrics.Counter
 	DeliveryCounter          metrics.Counter
 	DroppedInvalidConfig     metrics.Counter
@@ -122,7 +121,6 @@ func NewMeasures(p provider.Provider) *Measures {
 		CutOffCounter:            p.NewCounter(SlowConsumerCounter),
 		DroppedCutoffCounter:     p.NewCounter(SlowConsumerDroppedMsgCounter),
 		ContentTypeCounter:       p.NewCounter(IncomingContentTypeCounter),
-		DeliverUntilGauge:        p.NewGauge(ConsumerDeliverUntilGauge),
 		DroppedNetworkErrCounter: p.NewCounter(SlowConsumerDroppedMsgCounter),
 		DeliveryCounter:          p.NewCounter(DeliveryCounter),
 		DroppedInvalidConfig:     p.NewCounter(SlowConsumerDroppedMsgCounter),

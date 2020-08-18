@@ -76,6 +76,10 @@ func (m *Manager) Update(items []argus.Item) {
 	oldNorns := []dispatch.F{}
 
 	transport := NewTransport(m.dispatcherConfig)
+	sender := &http.Client{
+		Transport: transport,
+	}
+	var dispatcher dispatch.D
 
 	for _, item := range items {
 		id := item.Identifier
@@ -86,11 +90,20 @@ func (m *Manager) Update(items []argus.Item) {
 		if _, ok := m.nornFilter[id]; ok {
 			recentMap[id] = norn
 		} else {
-			dispatcher, err := dispatch.NewDispatcher(m.dispatcherConfig, norn, transport)
-			if err != nil {
-				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+
+			if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
+				dispatcher, err = dispatch.NewHttpDispatcher(m.dispatcherConfig, norn, sender)
+				if err != nil {
+					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+				}
+			} else {
+				dispatcher, err = dispatch.NewSqsDispatcher(m.dispatcherConfig, norn, transport)
+				if err != nil {
+					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+				}
 			}
-			filter, err := dispatch.NewFilter(m.filterConfig, id, dispatcher, norn, transport)
+
+			filter, err := dispatch.NewFilter(m.filterConfig, dispatcher, norn, sender)
 			if err != nil {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			}
@@ -105,11 +118,12 @@ func (m *Manager) Update(items []argus.Item) {
 	}
 
 	for i, filterdis := range m.nornFilter {
-		if val, ok := recentMap[i]; !ok {
+		if norn, ok := recentMap[i]; !ok {
 			oldNorns = append(oldNorns, filterdis.filter)
 			delete(m.nornFilter, i)
 		} else {
-			filterdis.dispatcher.Update(val)
+			filterdis.dispatcher.Update(norn)
+			filterdis.filter.Update(norn)
 		}
 	}
 
@@ -131,7 +145,7 @@ func (m *Manager) Update(items []argus.Item) {
 func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.RLock()
 	for _, fd := range m.nornFilter {
-		fd.filter.Filter(event)
+		fd.filter.Filter(deviceID, event)
 	}
 	m.mutex.Unlock()
 }

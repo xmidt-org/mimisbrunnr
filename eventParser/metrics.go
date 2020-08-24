@@ -28,8 +28,6 @@ import (
 const (
 	ParsingQueueDepth    = "parsing_queue_depth"
 	DroppedEventsCounter = "dropped_events_count"
-	reasonLabel          = "reason"
-	queueFullReason      = "queue_full"
 )
 
 func ProvideMetrics() fx.Option {
@@ -49,8 +47,9 @@ func ProvideMetrics() fx.Option {
 }
 
 type Measures struct {
-	EventParsingQueue         metrics.Gauge
-	DroppedEventsParsingCount metrics.Counter
+	fx.In
+	EventParsingQueue         metrics.Gauge   `name:"parsing_queue_depth"`
+	DroppedEventsParsingCount metrics.Counter `name:"dropped_events_count"`
 }
 
 func NewMeasures(p provider.Provider) *Measures {

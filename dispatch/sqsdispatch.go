@@ -21,8 +21,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/http"
-	"reflect"
+	"net/url"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -33,37 +32,31 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/logging"
-	"github.com/xmidt-org/webpa-common/semaphore"
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-type SqsDispatcher struct {
-	Wg        sync.WaitGroup
-	Measures  *Measures
-	Logger    log.Logger
-	Norn      model.Norn
-	Workers   semaphore.Interface
-	SqsClient *sqs.SQS
+type SQSDispatcher struct {
+	wg        sync.WaitGroup
+	measures  Measures
+	logger    log.Logger
+	awsConfig model.AWSConfig
+	sqsClient *sqs.SQS
+	mutex     sync.RWMutex
 }
 
-func NewSqsDispatcher(dc DispatcherConfig, norn model.Norn, transport http.RoundTripper) (D, error) {
-	if dc.QueueSize < defaultMinQueueSize {
-		dc.QueueSize = defaultMinQueueSize
-	}
+func NewSqsDispatcher(dc SenderConfig, awsConfig model.AWSConfig, logger log.Logger, measures Measures) (*SQSDispatcher, error) {
 
-	if dc.NumWorkers < minMaxWorkers {
-		dc.NumWorkers = minMaxWorkers
+	dispatcher := SQSDispatcher{
+		awsConfig: awsConfig,
+		logger:    logger,
+		measures:  measures,
 	}
-
-	dispatcher := SqsDispatcher{
-		Norn: norn,
-	}
-	err := validateAWSConfig(norn.Destination.AWSConfig)
+	err := validateAWSConfig(awsConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	return dispatcher, nil
+	return &dispatcher, nil
 }
 
 func validateAWSConfig(config model.AWSConfig) error {
@@ -79,7 +72,8 @@ func validateAWSConfig(config model.AWSConfig) error {
 		return fmt.Errorf("invalid AWS id")
 	}
 
-	if config.Sqs.QueueURL == "" {
+	_, err := url.ParseRequestURI(config.Sqs.QueueURL)
+	if err != nil {
 		return fmt.Errorf("invalid SQS queueUrl")
 	}
 
@@ -90,35 +84,34 @@ func validateAWSConfig(config model.AWSConfig) error {
 	return nil
 }
 
-func (s SqsDispatcher) Start(_ context.Context) error {
+func (s *SQSDispatcher) Start(_ context.Context) error {
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(s.Norn.Destination.AWSConfig.Sqs.Region),
-		Credentials: credentials.NewStaticCredentials(s.Norn.Destination.AWSConfig.ID, s.Norn.Destination.AWSConfig.AccessKey, s.Norn.Destination.AWSConfig.SecretKey),
+		Region:      aws.String(s.awsConfig.Sqs.Region),
+		Credentials: credentials.NewStaticCredentials(s.awsConfig.ID, s.awsConfig.AccessKey, s.awsConfig.SecretKey),
 	})
 	if err != nil {
 		return err
 	}
-	s.SqsClient = sqs.New(sess)
+	s.sqsClient = sqs.New(sess)
 
 	return nil
 
 }
 
 // called to deliver event
-func (s SqsDispatcher) Send(msg *wrp.Message) {
+func (s *SQSDispatcher) Send(msg *wrp.Message) {
+	url := s.awsConfig.Sqs.QueueURL
 	defer func() {
-		s.Wg.Done()
+		s.wg.Done()
 		if r := recover(); nil != r {
-			s.Measures.DroppedPanicCounter.Add(1.0)
-			s.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "goroutine send() panicked",
-				"id", s.Norn.DeviceID, "panic", r)
+			s.measures.DroppedPanicCounter.Add(1.0)
+			s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "goroutine send() panicked",
+				"url", url, "panic", r)
 		}
-		s.Workers.Release()
-		s.Measures.WorkersCount.Add(-1.0)
+		s.measures.WorkersCount.Add(-1.0)
 	}()
 
 	var (
-		url   string
 		code  string
 		event string
 	)
@@ -127,41 +120,38 @@ func (s SqsDispatcher) Send(msg *wrp.Message) {
 	encoder := wrp.NewEncoder(buffer, wrp.JSON)
 	err := encoder.Encode(msg)
 	if err != nil {
-		s.Measures.DroppedInvalidConfig.Add(1.0)
-		s.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to marshal event.")
+		s.measures.DroppedInvalidConfig.Add(1.0)
+		s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to marshal event.")
 		return
 	}
 	body := buffer.Bytes()
+	event = msg.FindEventStringSubMatch()
 
 	sqsParams := &sqs.SendMessageInput{
 		MessageBody:  aws.String(string(body)),
-		QueueUrl:     aws.String(s.Norn.Destination.AWSConfig.Sqs.QueueURL),
-		DelaySeconds: aws.Int64(s.Norn.Destination.AWSConfig.Sqs.DelaySeconds),
+		QueueUrl:     aws.String(url),
+		DelaySeconds: aws.Int64(s.awsConfig.Sqs.DelaySeconds),
 	}
-	_, err = s.SqsClient.SendMessage(sqsParams)
+	_, err = s.sqsClient.SendMessage(sqsParams)
 	if err != nil {
-		s.Measures.DroppedNetworkErrCounter.Add(1.0)
-		s.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to sqs.")
+		s.measures.DroppedNetworkErrCounter.Add(1.0)
+		s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to sqs.")
 		return
 	}
-	url = s.Norn.Destination.AWSConfig.Sqs.QueueURL
-	s.Measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
+	s.measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
 
 }
 
-func (s SqsDispatcher) Update(norn model.Norn) {
+func (s *SQSDispatcher) Update(norn model.Norn) {
 
-	if reflect.DeepEqual(s.Norn.Destination.AWSConfig, norn.Destination.AWSConfig) == false {
-		sess, err := session.NewSession(&aws.Config{
-			Region:      aws.String(norn.Destination.AWSConfig.Sqs.Region),
-			Credentials: credentials.NewStaticCredentials(norn.Destination.AWSConfig.ID, norn.Destination.AWSConfig.AccessKey, norn.Destination.AWSConfig.SecretKey),
-		})
-		if err != nil {
-			s.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to create new aws session.")
-			return
-		}
-		s.SqsClient = sqs.New(sess)
-		s.Norn.Destination.AWSConfig = norn.Destination.AWSConfig
+	s.mutex.Lock()
+	s.awsConfig = norn.Destination.AWSConfig
+	s.mutex.Unlock()
+
+	err := s.Start(nil)
+	if err != nil {
+		fmt.Errorf("failed to update aws session")
+		return
 	}
 
 }

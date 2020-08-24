@@ -39,28 +39,21 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-type F interface {
-	Start(context.Context) error
-	Filter(deviceID string, event *wrp.Message)
-	Update(norn model.Norn)
-	Stop(context.Context) error
-}
-
 type Filter struct {
-	Norn         model.Norn
-	FilterQueue  atomic.Value
-	Wg           sync.WaitGroup
-	Measures     *Measures
-	Mutex        sync.RWMutex
-	DropUntil    time.Time
-	MaxWorkers   int
-	Workers      semaphore.Interface
-	FailureMsg   FailureMessage
-	CutOffPeriod time.Duration
-	Logger       log.Logger
-	Sender       func(*http.Request) (*http.Response, error)
-	QueueSize    int
-	Dispatcher   D
+	norn         model.Norn
+	filterQueue  atomic.Value
+	wg           sync.WaitGroup
+	measures     *Measures
+	mutex        sync.RWMutex
+	dropUntil    time.Time
+	maxWorkers   int
+	workers      semaphore.Interface
+	failureMsg   FailureMessage
+	cutOffPeriod time.Duration
+	logger       log.Logger
+	sender       func(*http.Request) (*http.Response, error)
+	queueSize    int
+	dispatcher   D
 }
 
 type FilterConfig struct {
@@ -68,81 +61,104 @@ type FilterConfig struct {
 	SenderConfig SenderConfig
 }
 
-func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Client) (F, error) {
+type D interface {
+	Start(context.Context) error
+	Send(*wrp.Message)
+	Update(norn model.Norn)
+}
+
+type FailureMessage struct {
+	Text         string `json:"text"`
+	CutOffPeriod string `json:"cut_off_period"`
+}
+
+const (
+	defaultMinQueueSize = 5
+	minMaxWorkers       = 5
+)
+
+// failureText is human readable text for the failure message
+const FailureText = `Unfortunately, your endpoint is not able to keep up with the ` +
+	`traffic being sent to it.  Due to this circumstance, all notification traffic ` +
+	`is being cut off and dropped for a period of time.  Please increase your ` +
+	`capacity to handle notifications, or reduce the number of notifications ` +
+	`you have requested.`
+
+func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Client) (*Filter, error) {
 	if norn.DeviceID == "" {
 		return nil, fmt.Errorf("invalid deviceID")
 	}
 	filter := Filter{
-		Dispatcher: dispatcher,
-		FailureMsg: FailureMessage{
+		dispatcher: dispatcher,
+		failureMsg: FailureMessage{
 			Text:         FailureText,
 			CutOffPeriod: fc.SenderConfig.CutOffPeriod.String(),
 		},
-		Norn:   norn,
-		Sender: (sender).Do,
+		norn:   norn,
+		sender: (sender).Do,
 	}
-	filter.FilterQueue.Store(make(chan *wrp.Message, fc.QueueSize))
+	filter.filterQueue.Store(make(chan *wrp.Message, fc.QueueSize))
 	return &filter, nil
 }
 
-func (f Filter) Start(_ context.Context) error {
-	f.Wg.Add(1)
+func (f *Filter) Start(_ context.Context) error {
+	f.wg.Add(1)
 	go f.sendEvents()
 	return nil
 
 }
 
-func (f Filter) Stop(_ context.Context) error {
-	close(f.FilterQueue.Load().(chan *wrp.Message))
-	f.Mutex.Lock()
-	f.Measures.EventQueueDepthGauge.Set(0.0)
-	f.Mutex.Unlock()
-	f.Wg.Wait()
+func (f *Filter) Stop(_ context.Context) error {
+	close(f.filterQueue.Load().(chan *wrp.Message))
+	f.mutex.Lock()
+	f.measures.EventQueueDepthGauge.Set(0.0)
+	f.mutex.Unlock()
+	f.wg.Wait()
 	return nil
 }
 
 func (f *Filter) Filter(deviceID string, event *wrp.Message) {
-	if deviceID == f.Norn.DeviceID {
+	if deviceID == f.norn.DeviceID {
 		select {
-		case f.FilterQueue.Load().(chan *wrp.Message) <- event:
-			f.Measures.EventQueueDepthGauge.Add(1.0)
+		case f.filterQueue.Load().(chan *wrp.Message) <- event:
+			f.measures.EventQueueDepthGauge.Add(1.0)
 
 		default:
 			f.queueOverflow()
-			f.Measures.DroppedQueueCount.Add(1.0)
+			f.measures.DroppedQueueCount.Add(1.0)
 		}
 	}
 }
 
 // called if queue is filled
-func (f Filter) queueOverflow() {
+func (f *Filter) queueOverflow() {
 
-	f.Mutex.Lock()
-	if time.Now().Before(f.DropUntil) {
-		f.Mutex.Unlock()
+	f.mutex.Lock()
+	if time.Now().Before(f.dropUntil) {
+		f.mutex.Unlock()
 		return
 	}
-	f.DropUntil = time.Now().Add(f.CutOffPeriod)
-	f.Measures.DropUntilGauge.Set(float64(f.DropUntil.Unix()))
-	secret := f.Norn.Destination.HttpConfig.Secret
-	failureMsg := f.FailureMsg
-	failureURL := f.Norn.Destination.HttpConfig.FailureURL
-	f.Mutex.Unlock()
+	f.dropUntil = time.Now().Add(f.cutOffPeriod)
+	f.measures.DropUntilGauge.Set(float64(f.dropUntil.Unix()))
+	secret := f.norn.Destination.HttpConfig.Secret
+	failureMsg := f.failureMsg
+	failureURL := f.norn.Destination.HttpConfig.FailureURL
+	f.mutex.Unlock()
 
 	var (
-		errorLog = log.WithPrefix(f.Logger, level.Key(), level.ErrorValue())
+		errorLog = log.WithPrefix(f.logger, level.Key(), level.ErrorValue())
 	)
 
-	f.Measures.CutOffCounter.Add(1.0)
+	f.measures.CutOffCounter.Add(1.0)
 
 	// We empty the queue but don't close the channel, because we're not
 	// shutting down.
-	f.empty(f.Measures.DroppedCutoffCounter)
+	f.empty(f.measures.DroppedCutoffCounter)
 
 	msg, err := json.Marshal(failureMsg)
 	if nil != err {
-		errorLog.Log(logging.MessageKey(), "Cut-off notification json.Marshal failed", "failureMessage", f.FailureMsg,
-			"for", f.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+		errorLog.Log(logging.MessageKey(), "Cut-off notification json.Marshal failed", "failureMessage", f.failureMsg,
+			"for", f.norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 		return
 	}
 
@@ -157,7 +173,7 @@ func (f Filter) queueOverflow() {
 	if nil != err {
 		// Failure
 		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
-			failureURL, "for", f.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+			failureURL, "for", f.norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -170,12 +186,12 @@ func (f Filter) queueOverflow() {
 	}
 
 	//  record content type, json.
-	f.Measures.ContentTypeCounter.With("content_type", "json").Add(1.0)
-	resp, err := f.Sender(req)
+	f.measures.ContentTypeCounter.With("content_type", "json").Add(1.0)
+	resp, err := f.sender(req)
 	if nil != err {
 		// Failure
 		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
-			failureURL, "for", f.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+			failureURL, "for", f.norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
 		return
 	}
 
@@ -189,48 +205,48 @@ func (f Filter) queueOverflow() {
 }
 
 func (f *Filter) empty(droppedCounter metrics.Counter) {
-	droppedMsgs := f.FilterQueue.Load().(chan *wrp.Message)
-	f.FilterQueue.Store(make(chan *wrp.Message, f.QueueSize))
+	droppedMsgs := f.filterQueue.Load().(chan *wrp.Message)
+	f.filterQueue.Store(make(chan *wrp.Message, f.queueSize))
 	droppedCounter.Add(float64(len(droppedMsgs)))
-	f.Measures.EventQueueDepthGauge.Set(0.0)
+	f.measures.EventQueueDepthGauge.Set(0.0)
 	return
 }
 
-func (f Filter) sendEvents() {
+func (f *Filter) sendEvents() {
 Loop:
 	for {
-		defer f.Wg.Done()
-		queue := f.FilterQueue.Load().(chan *wrp.Message)
+		defer f.wg.Done()
+		queue := f.filterQueue.Load().(chan *wrp.Message)
 		select {
 
 		case en, ok := <-queue:
 			if !ok {
 				break Loop
 			}
-			f.Measures.EventQueueDepthGauge.Add(-1.0)
+			f.measures.EventQueueDepthGauge.Add(-1.0)
 
-			f.Mutex.RLock()
-			deliverUntil := time.Unix(0, f.Norn.ExpiresAt)
-			dropUntil := f.DropUntil
-			f.Mutex.RUnlock()
+			f.mutex.RLock()
+			deliverUntil := time.Unix(0, f.norn.ExpiresAt)
+			dropUntil := f.dropUntil
+			f.mutex.RUnlock()
 
 			now := time.Now()
 
 			if now.Before(dropUntil) {
-				f.Measures.DroppedCutoffCounter.Add(1.0)
+				f.measures.DroppedCutoffCounter.Add(1.0)
 				continue
 			}
 			if now.After(deliverUntil) {
-				f.Measures.DroppedExpiredCounter.Add(1.0)
+				f.measures.DroppedExpiredCounter.Add(1.0)
 				continue
 			}
 
-			f.Workers.Acquire()
-			f.Measures.WorkersCount.Add(1.0)
-			go f.Dispatcher.Send(en)
+			f.workers.Acquire()
+			f.measures.WorkersCount.Add(1.0)
+			go f.dispatcher.Send(en)
 		}
-		for i := 0; i < f.MaxWorkers; i++ {
-			f.Workers.Acquire()
+		for i := 0; i < f.maxWorkers; i++ {
+			f.workers.Acquire()
 		}
 
 		return
@@ -238,8 +254,10 @@ Loop:
 
 }
 
-func (f Filter) Update(norn model.Norn) {
-	if f.Norn.ExpiresAt != norn.ExpiresAt {
-		f.Norn.ExpiresAt = norn.ExpiresAt
+func (f *Filter) Update(norn model.Norn) {
+	f.mutex.Lock()
+	if f.norn.ExpiresAt != norn.ExpiresAt {
+		f.norn.ExpiresAt = norn.ExpiresAt
 	}
+	f.mutex.Unlock()
 }

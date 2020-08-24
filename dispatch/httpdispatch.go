@@ -41,75 +41,73 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-type DispatcherConfig struct {
-	QueueSize    int
-	NumWorkers   int
-	SenderConfig SenderConfig
-	Norn         model.Norn
-}
-
 type SenderConfig struct {
 	NumWorkersPerSender   int
 	ResponseHeaderTimeout time.Duration
 	IdleConnTimeout       time.Duration
 	CutOffPeriod          time.Duration
 	DeliveryInterval      time.Duration
+	DeliveryRetries       int
 }
 
-type HttpDispatcher struct {
-	Measures         *Measures
-	Workers          semaphore.Interface
-	Logger           log.Logger
-	DeliveryRetries  int
-	DeliveryInterval time.Duration
-	Sender           func(*http.Request) (*http.Response, error)
-	Mutex            sync.RWMutex
-	Wg               sync.WaitGroup
-	Norn             model.Norn
+type HTTPDispatcher struct {
+	measures         Measures
+	workers          semaphore.Interface
+	logger           log.Logger
+	deliveryRetries  int
+	deliveryInterval time.Duration
+	sender           func(*http.Request) (*http.Response, error)
+	mutex            sync.RWMutex
+	httpConfig       model.HttpConfig
 }
 
-func NewHttpDispatcher(dc DispatcherConfig, norn model.Norn, sender *http.Client) (D, error) {
-	if dc.QueueSize < defaultMinQueueSize {
-		dc.QueueSize = defaultMinQueueSize
-	}
+func NewHttpDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
 
-	if dc.NumWorkers < minMaxWorkers {
-		dc.NumWorkers = minMaxWorkers
-	}
-
-	dispatcher := HttpDispatcher{
-		Norn:   norn,
-		Sender: (sender).Do,
-	}
-
-	_, err := url.ParseRequestURI(norn.Destination.HttpConfig.URL)
+	_, err := url.ParseRequestURI(httpConfig.URL)
 	if err != nil {
-		return dispatcher, nil
+		logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to parse HTTP URL.")
+		return nil, err
 	}
 
-	return dispatcher, nil
+	if dc.DeliveryRetries > 10 {
+		dc.DeliveryRetries = 10
+	}
+
+	if dc.DeliveryInterval > 1*time.Hour {
+		dc.DeliveryInterval = 1 * time.Hour
+	}
+
+	dispatcher := HTTPDispatcher{
+		httpConfig:       httpConfig,
+		sender:           (sender).Do,
+		logger:           logger,
+		deliveryRetries:  dc.DeliveryRetries,
+		deliveryInterval: dc.DeliveryInterval,
+		measures:         measures,
+	}
+
+	return &dispatcher, nil
 }
 
-func (h HttpDispatcher) Start(_ context.Context) error {
+func (h *HTTPDispatcher) Start(_ context.Context) error {
 	return nil
 
 }
 
 // called to deliver event
-func (h HttpDispatcher) Send(msg *wrp.Message) {
+func (h *HTTPDispatcher) Send(msg *wrp.Message) {
+	url := h.httpConfig.URL
 	defer func() {
-		h.Wg.Done()
 		if r := recover(); nil != r {
-			h.Measures.DroppedPanicCounter.Add(1.0)
-			h.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "goroutine send() panicked",
-				"id", h.Norn.DeviceID, "panic", r)
+			h.measures.DroppedPanicCounter.Add(1.0)
+			h.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "goroutine send() panicked",
+				"url", url, "panic", r)
 		}
-		h.Workers.Release()
-		h.Measures.WorkersCount.Add(-1.0)
+		h.workers.Release()
+		h.measures.WorkersCount.Add(-1.0)
 	}()
 
 	var (
-		url   string
 		code  string
 		event string
 	)
@@ -118,8 +116,8 @@ func (h HttpDispatcher) Send(msg *wrp.Message) {
 	encoder := wrp.NewEncoder(buffer, wrp.JSON)
 	err := encoder.Encode(msg)
 	if err != nil {
-		h.Measures.DroppedInvalidConfig.Add(1.0)
-		h.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to marshal event.")
+		h.measures.DroppedInvalidConfig.Add(1.0)
+		h.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to marshal event.")
 		return
 	}
 	bodyPayload := buffer.Bytes()
@@ -128,17 +126,17 @@ func (h HttpDispatcher) Send(msg *wrp.Message) {
 	var (
 		body []byte
 	)
-	req, err := http.NewRequest("POST", h.Norn.Destination.HttpConfig.URL, payloadReader)
+	req, err := http.NewRequest("POST", url, payloadReader)
 	if nil != err {
-		h.Measures.DroppedInvalidConfig.Add(1.0)
-		h.Logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Invalid URL",
-			"url", h.Norn.Destination.HttpConfig.URL, logging.ErrorKey(), err)
+		h.measures.DroppedInvalidConfig.Add(1.0)
+		h.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Invalid URL",
+			"url", url, logging.ErrorKey(), err)
 		return
 	}
 
 	// Apply the secret
-	if "" != h.Norn.Destination.HttpConfig.Secret {
-		s := hmac.New(sha1.New, []byte(h.Norn.Destination.HttpConfig.Secret))
+	if "" != h.httpConfig.Secret {
+		s := hmac.New(sha1.New, []byte(h.httpConfig.Secret))
 		s.Write(body)
 		sig := fmt.Sprintf("sha1=%s", hex.EncodeToString(s.Sum(nil)))
 		req.Header.Set("X-Codex-Signature", sig)
@@ -148,18 +146,18 @@ func (h HttpDispatcher) Send(msg *wrp.Message) {
 	event = msg.FindEventStringSubMatch()
 
 	retryOptions := xhttp.RetryOptions{
-		Logger:      h.Logger,
-		Retries:     h.DeliveryRetries,
-		Interval:    h.DeliveryInterval,
+		Logger:      h.logger,
+		Retries:     h.deliveryRetries,
+		Interval:    h.deliveryInterval,
 		ShouldRetry: func(error) bool { return true },
 		ShouldRetryStatus: func(code int) bool {
 			return code < 200 || code > 299
 		},
 	}
-	resp, err := xhttp.RetryTransactor(retryOptions, h.Sender)(req)
+	resp, err := xhttp.RetryTransactor(retryOptions, h.sender)(req)
 	code = "failure"
 	if nil != err {
-		h.Measures.DroppedNetworkErrCounter.Add(1.0)
+		h.measures.DroppedNetworkErrCounter.Add(1.0)
 	} else {
 		// Report Result for metrics
 		code = strconv.Itoa(resp.StatusCode)
@@ -171,15 +169,16 @@ func (h HttpDispatcher) Send(msg *wrp.Message) {
 			resp.Body.Close()
 		}
 	}
-	url = h.Norn.Destination.HttpConfig.URL
-	h.Measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
+	h.measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
 
 }
 
-func (h HttpDispatcher) Update(norn model.Norn) {
+func (h *HTTPDispatcher) Update(norn model.Norn) {
 
-	if h.Norn.Destination.HttpConfig.Secret != norn.Destination.HttpConfig.Secret {
-		h.Norn.Destination.HttpConfig.Secret = norn.Destination.HttpConfig.Secret
+	h.mutex.Lock()
+	if h.httpConfig.Secret != norn.Destination.HttpConfig.Secret {
+		h.httpConfig.Secret = norn.Destination.HttpConfig.Secret
 	}
+	h.mutex.Unlock()
 
 }

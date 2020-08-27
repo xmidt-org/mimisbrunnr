@@ -60,7 +60,7 @@ type EventParser struct {
 	requestQueue atomic.Value
 	parseWorkers semaphore.Interface
 	logger       log.Logger
-	measures     Measures
+	measures     *Measures
 	wg           sync.WaitGroup
 	opt          ParserConfig
 	sender       EventSenderFunc
@@ -70,7 +70,7 @@ type Response struct {
 	response int
 }
 
-func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, measures Measures) (*EventParser, error) {
+func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, measures *Measures) (*EventParser, error) {
 	if o.MaxWorkers < MinMaxWorkers {
 		o.MaxWorkers = MinMaxWorkers
 	}
@@ -106,9 +106,13 @@ func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 
 		select {
 		case p.requestQueue.Load().(chan *wrp.Message) <- message:
-			p.measures.EventParsingQueue.Add(1.0)
+			if p.measures != nil {
+				p.measures.EventParsingQueue.Add(1.0)
+			}
 		default:
-			p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
+			if p.measures != nil {
+				p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
+			}
 			return &Response{
 				response: http.StatusTooManyRequests,
 			}, nil

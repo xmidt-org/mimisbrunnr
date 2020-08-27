@@ -243,7 +243,11 @@ Loop:
 
 			f.workers.Acquire()
 			f.measures.WorkersCount.Add(1.0)
-			go f.dispatcher.Send(en)
+			go func() {
+				f.dispatcher.Send(en)
+				f.workers.Release()
+				f.measures.WorkersCount.Add(-1.0)
+			}()
 		}
 		for i := 0; i < f.maxWorkers; i++ {
 			f.workers.Acquire()

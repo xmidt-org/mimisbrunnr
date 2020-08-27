@@ -37,8 +37,8 @@ import (
 )
 
 type Manager struct {
-	idFilter         map[string]filterDispatcher
-	urlDispatcher    map[string]filterDispatcher
+	idFilter         map[string]nornFilter
+	urlDispatcher    map[string]dispatch.D
 	dispatcherConfig dispatch.SenderConfig
 	filterConfig     dispatch.FilterConfig
 	logger           log.Logger
@@ -47,10 +47,14 @@ type Manager struct {
 	sender           *http.Client
 }
 
-type filterDispatcher struct {
-	norn       model.Norn
+type nornFilter struct {
+	norn   model.Norn
+	filter Filterer
+}
+
+type endpointDispatcher struct {
+	endpoint   string
 	dispatcher dispatch.D
-	filter     Filterer
 }
 
 type Filterer interface {
@@ -67,8 +71,8 @@ func NewManager(dc dispatch.SenderConfig, fc dispatch.FilterConfig, logger log.L
 	}
 
 	return &Manager{
-		idFilter:         map[string]filterDispatcher{},
-		urlDispatcher:    map[string]filterDispatcher{},
+		idFilter:         map[string]nornFilter{},
+		urlDispatcher:    map[string]dispatch.D{},
 		dispatcherConfig: dc,
 		filterConfig:     fc,
 		logger:           logger,
@@ -92,12 +96,16 @@ func (m *Manager) Update(items []argus.Item) {
 	recentIDMap := make(map[string]model.Norn)
 	recentURLMap := make(map[string]model.Norn)
 
-	newNorns := []filterDispatcher{}
-	oldNorns := []Filterer{}
+	newNorns := []nornFilter{}
+	newDispatchers := []endpointDispatcher{}
+	oldFilterNorns := []Filterer{}
+	oldDispatcherUrls := []dispatch.D{}
 
-	var dispatcher dispatch.D
-	var filter *dispatch.Filter
-	var url string
+	var (
+		dispatcher dispatch.D
+		filter     *dispatch.Filter
+		url        string
+	)
 
 	for _, item := range items {
 		id := item.Identifier
@@ -111,18 +119,6 @@ func (m *Manager) Update(items []argus.Item) {
 			url = norn.Destination.AWSConfig.Sqs.QueueURL
 		}
 
-		if _, ok := m.idFilter[id]; ok {
-			recentIDMap[id] = norn
-		} else {
-			filter, err = dispatch.NewFilter(m.filterConfig, dispatcher, norn, m.sender)
-			if err != nil {
-				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
-			} else {
-				recentIDMap[id] = norn
-			}
-
-		}
-
 		if _, ok := m.urlDispatcher[url]; ok {
 			recentURLMap[url] = norn
 		} else {
@@ -131,7 +127,7 @@ func (m *Manager) Update(items []argus.Item) {
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
-					newNorns = append(newNorns, filterDispatcher{norn: norn, dispatcher: dispatcher, filter: filter})
+					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
 					recentURLMap[url] = norn
 				}
 			} else {
@@ -139,38 +135,60 @@ func (m *Manager) Update(items []argus.Item) {
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
-					newNorns = append(newNorns, filterDispatcher{norn: norn, dispatcher: dispatcher, filter: filter})
+					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
 					recentURLMap[url] = norn
 				}
 			}
 		}
+
+		if _, ok := m.idFilter[id]; ok {
+			recentIDMap[id] = norn
+		} else {
+			filter, err = dispatch.NewFilter(m.filterConfig, dispatcher, norn, m.sender)
+			if err != nil {
+				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+			} else {
+				newNorns = append(newNorns, nornFilter{norn: norn, filter: filter})
+				recentIDMap[id] = norn
+			}
+		}
 	}
 
-	for i, filterdis := range m.idFilter {
+	for i, nornFilter := range m.idFilter {
 		if norn, ok := recentIDMap[i]; !ok {
-			oldNorns = append(oldNorns, filterdis.filter)
+			oldFilterNorns = append(oldFilterNorns, nornFilter.filter)
+			m.mutex.Lock()
 			delete(m.idFilter, i)
+			m.mutex.Unlock()
 		} else {
-			filterdis.filter.Update(norn)
+			nornFilter.filter.Update(norn)
 		}
 	}
 
-	for i, filterdis := range m.urlDispatcher {
+	for i, dispatcher := range m.urlDispatcher {
 		if norn, ok := recentURLMap[i]; !ok {
-			oldNorns = append(oldNorns, filterdis.filter)
+			oldDispatcherUrls = append(oldDispatcherUrls, dispatcher)
+			m.mutex.Lock()
 			delete(m.urlDispatcher, i)
+			m.mutex.Unlock()
 		} else {
-			filterdis.dispatcher.Update(norn)
+			dispatcher.Update(norn)
 		}
 	}
 
-	for _, filterdis := range newNorns {
+	for _, nornFilter := range newNorns {
 		m.mutex.Lock()
-		m.idFilter[filterdis.norn.DeviceID] = filterdis
+		m.idFilter[nornFilter.norn.DeviceID] = nornFilter
 		m.mutex.Unlock()
 	}
 
-	for _, filter := range oldNorns {
+	for _, endpointDispatcher := range newDispatchers {
+		m.mutex.Lock()
+		m.urlDispatcher[endpointDispatcher.endpoint] = endpointDispatcher.dispatcher
+		m.mutex.Unlock()
+	}
+
+	for _, filter := range oldFilterNorns {
 		filter.Stop(nil)
 	}
 
@@ -189,7 +207,7 @@ func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 		var (
 			idOwner    norn.IdOwnerItem
 			ok         bool
-			nornFilter filterDispatcher
+			nornFilter nornFilter
 		)
 		if idOwner, ok = request.(norn.IdOwnerItem); !ok {
 			return nil, norn.BadRequestError{Request: request}

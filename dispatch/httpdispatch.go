@@ -36,7 +36,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/logging"
-	"github.com/xmidt-org/webpa-common/semaphore"
 	"github.com/xmidt-org/webpa-common/xhttp"
 	"github.com/xmidt-org/wrp-go/v2"
 )
@@ -52,7 +51,6 @@ type SenderConfig struct {
 
 type HTTPDispatcher struct {
 	measures         Measures
-	workers          semaphore.Interface
 	logger           log.Logger
 	deliveryRetries  int
 	deliveryInterval time.Duration
@@ -103,8 +101,6 @@ func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 			h.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "goroutine send() panicked",
 				"url", url, "panic", r)
 		}
-		h.workers.Release()
-		h.measures.WorkersCount.Add(-1.0)
 	}()
 
 	var (

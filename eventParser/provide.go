@@ -28,7 +28,7 @@ type EventParserIn struct {
 	Lifecycle   fx.Lifecycle
 	EventSender EventSenderFunc
 	Logger      log.Logger
-	Measures    Measures
+	Measures    *Measures
 }
 
 func Provide(in EventParserIn, opt ParserConfig) (*EventParser, error) {

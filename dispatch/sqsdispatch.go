@@ -134,9 +134,12 @@ func (s *SQSDispatcher) Send(msg *wrp.Message) {
 	}
 	_, err = s.sqsClient.SendMessage(sqsParams)
 	if err != nil {
+		code = "sqsfailure"
 		s.measures.DroppedNetworkErrCounter.Add(1.0)
-		s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to sqs.")
+		s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to sqs.", "url", url, "code", code, "event", event)
 		return
+	} else {
+		code = "200"
 	}
 	s.measures.DeliveryCounter.With("url", url, "code", code, "event", event).Add(1.0)
 

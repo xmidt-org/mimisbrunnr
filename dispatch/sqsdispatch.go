@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
@@ -134,7 +135,9 @@ func (s *SQSDispatcher) Send(msg *wrp.Message) {
 	}
 	_, err = s.sqsClient.SendMessage(sqsParams)
 	if err != nil {
-		code = "sqsfailure"
+		if awsErr, ok := err.(awserr.Error); ok {
+			code = awsErr.Code()
+		}
 		s.measures.DroppedNetworkErrCounter.Add(1.0)
 		s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to sqs.", "url", url, "code", code, "event", event)
 		return

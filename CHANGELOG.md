@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 - making updates to dispatcher [#17](https://github.com/xmidt-org/mimisbrunnr/pull/17)
 - added mutex to prevent data races [#16](https://github.com/xmidt-org/mimisbrunnr/pull/16)
+- added documentation and enhancements [#20] (https://github.com/xmidt-org/mimisbrunnr/pull/20)
 
 ## [v0.1.0]
 - Initial creation

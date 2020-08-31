@@ -39,6 +39,7 @@ const (
 	apiBase         = "api/v1"
 )
 
+// ServerChainIn is the set of dependencies for this package's components
 type ServerChainIn struct {
 	fx.In
 
@@ -49,6 +50,7 @@ type ServerChainIn struct {
 	AuthChain *alice.Chain `name:"auth_chain"`
 }
 
+// ProvideServerChainFactory returns ChainFactory needed to set up primary server
 func ProvideServerChainFactory(in ServerChainIn) xhttpserver.ChainFactory {
 	return xhttpserver.ChainFactoryFunc(func(name string, o xhttpserver.Options) (alice.Chain, error) {
 		var (
@@ -142,6 +144,7 @@ type PostEventRouteIn struct {
 	Handler http.Handler `name:"eventHandler"`
 }
 
+// BuildPrimaryRoutes sets up all endpoint handlers for application
 func BuildPrimaryRoutes(router PrimaryRouter, pin PostRoutesIn, gin GetRoutesIn, din DeleteRoutesIn, puin PutRoutesIn, gain GetAllRoutesIn, pein PostEventRouteIn) {
 	if router.Handler != nil {
 		if pin.Handler != nil {
@@ -171,6 +174,7 @@ type MetricsRoutesIn struct {
 	Handler xmetricshttp.Handler
 }
 
+// BuildMetricsRoutes sets up metrics handler
 func BuildMetricsRoutes(in MetricsRoutesIn) {
 	if in.Router != nil && in.Handler != nil {
 		in.Router.Handle("/metrics", in.Handler).Methods("GET")
@@ -183,6 +187,7 @@ type HealthRoutesIn struct {
 	Handler xhealth.Handler
 }
 
+// BuildHealthRoutes sets up health handler
 func BuildHealthRoutes(in HealthRoutesIn) {
 	if in.Router != nil && in.Handler != nil {
 		in.Router.Handle("/health", in.Handler).Methods("GET")

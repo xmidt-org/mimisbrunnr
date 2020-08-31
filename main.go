@@ -18,7 +18,9 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"os"
 	"runtime"
 	"time"
@@ -108,23 +110,32 @@ func main() {
 			xlog.Unmarshal("log"),
 			func(v *viper.Viper) (eventParser.ParserConfig, error) {
 				config := new(eventParser.ParserConfig)
-				err := v.UnmarshalKey("parserConfig", &config)
+				err := v.UnmarshalKey("parser", &config)
 				return *config, err
 			},
 			func(v *viper.Viper) (dispatch.SenderConfig, error) {
 				config := new(dispatch.SenderConfig)
-				err := v.UnmarshalKey("senderConfig", &config)
+				err := v.UnmarshalKey("sender", &config)
 				return *config, err
 			},
 			func(v *viper.Viper) (dispatch.FilterConfig, error) {
 				config := new(dispatch.FilterConfig)
-				err := v.UnmarshalKey("filterConfig", &config)
+				err := v.UnmarshalKey("filter", &config)
 				return *config, err
 			},
+			func(dc dispatch.SenderConfig) http.RoundTripper {
+				var transport http.RoundTripper = &http.Transport{
+					TLSClientConfig:       &tls.Config{},
+					MaxIdleConnsPerHost:   dc.NumWorkersPerSender,
+					ResponseHeaderTimeout: dc.ResponseHeaderTimeout,
+					IdleConnTimeout:       dc.IdleConnTimeout,
+				}
+				return transport
+			},
 			manager.Provide,
-			func(v *viper.Viper, m *manager.Manager) (registry.RegistryConfig, error) {
-				config := new(registry.RegistryConfig)
-				err := v.UnmarshalKey("registryConfig", &config)
+			func(v *viper.Viper, m *manager.Manager) (registry.NornRegistry, error) {
+				config := new(registry.NornRegistry)
+				err := v.UnmarshalKey("nornRegistry", &config)
 				config.Listener = m.Update
 				return *config, err
 			},

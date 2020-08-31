@@ -19,7 +19,6 @@ package manager
 
 import (
 	"context"
-	"crypto/tls"
 	"net/http"
 	"sync"
 
@@ -36,6 +35,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
+// Manager keeps track of all recent Filterers and Dispatchers
 type Manager struct {
 	idFilter         map[string]filterDispatcher
 	urlDispatcher    map[string]filterDispatcher
@@ -60,8 +60,7 @@ type Filterer interface {
 	Stop(context.Context) error
 }
 
-func NewManager(dc dispatch.SenderConfig, fc dispatch.FilterConfig, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
-	transport := NewTransport(dc)
+func newManager(dc dispatch.SenderConfig, fc dispatch.FilterConfig, transport http.RoundTripper, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
 	sender := &http.Client{
 		Transport: transport,
 	}
@@ -77,17 +76,7 @@ func NewManager(dc dispatch.SenderConfig, fc dispatch.FilterConfig, logger log.L
 	}, nil
 }
 
-func NewTransport(dc dispatch.SenderConfig) http.RoundTripper {
-	var transport http.RoundTripper = &http.Transport{
-		TLSClientConfig:       &tls.Config{},
-		MaxIdleConnsPerHost:   dc.NumWorkersPerSender,
-		ResponseHeaderTimeout: dc.ResponseHeaderTimeout,
-		IdleConnTimeout:       dc.IdleConnTimeout,
-	}
-	return transport
-}
-
-// chrysom client listener
+// Update is the argus chrysom client listener
 func (m *Manager) Update(items []argus.Item) {
 	recentIDMap := make(map[string]model.Norn)
 	recentURLMap := make(map[string]model.Norn)
@@ -127,7 +116,7 @@ func (m *Manager) Update(items []argus.Item) {
 			recentURLMap[url] = norn
 		} else {
 			if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
-				dispatcher, err = dispatch.NewHttpDispatcher(m.dispatcherConfig, norn.Destination.HttpConfig, m.sender, m.logger, m.measures)
+				dispatcher, err = dispatch.NewHTTPDispatcher(m.dispatcherConfig, norn.Destination.HttpConfig, m.sender, m.logger, m.measures)
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
@@ -176,6 +165,7 @@ func (m *Manager) Update(items []argus.Item) {
 
 }
 
+// Send will send the message to Filter
 func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.RLock()
 	for _, fd := range m.idFilter {
@@ -184,6 +174,7 @@ func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.Unlock()
 }
 
+// NewGetEndpoint returns the endpoint for /norns/{id} handler
 func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -202,6 +193,7 @@ func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 
 }
 
+// NewGetEndpointDecode returns DecodeRequestFunc wrapper from the /norns/{id} endpoint
 func NewGetEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		nornID := mux.Vars(req)

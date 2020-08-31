@@ -22,7 +22,8 @@ import (
 	"go.uber.org/fx"
 )
 
-type EventParserIn struct {
+// ParserIn sets all the dependencies for this package's components
+type ParserIn struct {
 	fx.In
 
 	Lifecycle   fx.Lifecycle
@@ -31,7 +32,8 @@ type EventParserIn struct {
 	Measures    Measures
 }
 
-func Provide(in EventParserIn, opt ParserConfig) (*EventParser, error) {
+// Provide is an uber/fx style provider for this package's components
+func Provide(in ParserIn, opt ParserConfig) (*EventParser, error) {
 	ep, err := NewEventParser(in.EventSender, &in.Logger, opt, in.Measures)
 	if err != nil {
 		return nil, err

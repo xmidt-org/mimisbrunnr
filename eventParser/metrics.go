@@ -30,6 +30,7 @@ const (
 	DroppedEventsCounter = "dropped_events_count"
 )
 
+// ProvideMetrics is the metrics provider for eventParser
 func ProvideMetrics() fx.Option {
 	return fx.Provide(
 		xmetrics.ProvideGauge(
@@ -46,12 +47,14 @@ func ProvideMetrics() fx.Option {
 	)
 }
 
+// Measures describes the defined metrics that will be used by eventparser
 type Measures struct {
 	fx.In
 	EventParsingQueue         metrics.Gauge   `name:"parsing_queue_depth"`
 	DroppedEventsParsingCount metrics.Counter `name:"dropped_events_count"`
 }
 
+// NewMeasures returns desired metrics
 func NewMeasures(p provider.Provider) *Measures {
 	return &Measures{
 		EventParsingQueue:         p.NewGauge(ParsingQueueDepth),

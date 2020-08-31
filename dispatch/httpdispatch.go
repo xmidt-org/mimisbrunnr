@@ -41,6 +41,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
+// SenderConfig contains config to construct HTTPDispatcher
 type SenderConfig struct {
 	NumWorkersPerSender   int
 	ResponseHeaderTimeout time.Duration
@@ -50,6 +51,7 @@ type SenderConfig struct {
 	DeliveryRetries       int
 }
 
+// HTTPDispatcher implements the dispatcher interface to send events through http
 type HTTPDispatcher struct {
 	measures         Measures
 	workers          semaphore.Interface
@@ -61,7 +63,8 @@ type HTTPDispatcher struct {
 	httpConfig       model.HttpConfig
 }
 
-func NewHttpDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
+// NewHTTPDispatcher creates http dispatcher used to implement dispatcher interface
+func NewHTTPDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
 
 	_, err := url.ParseRequestURI(httpConfig.URL)
 	if err != nil {
@@ -89,12 +92,12 @@ func NewHttpDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *htt
 	return &dispatcher, nil
 }
 
-func (h *HTTPDispatcher) Start(_ context.Context) error {
+// Start is used to set up any long running routines needed
+func (h *HTTPDispatcher) Start(context.Context) error {
 	return nil
-
 }
 
-// called to deliver event
+// Send is called to deliver event
 func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 	url := h.httpConfig.URL
 	defer func() {
@@ -173,6 +176,7 @@ func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 
 }
 
+// Update updates secret for http dispatcher for a norn
 func (h *HTTPDispatcher) Update(norn model.Norn) {
 
 	h.mutex.Lock()

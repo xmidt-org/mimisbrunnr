@@ -35,6 +35,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
+// SQSDispatcher implements the dispatcher interface to send events to sqs
 type SQSDispatcher struct {
 	wg        sync.WaitGroup
 	measures  Measures
@@ -44,16 +45,17 @@ type SQSDispatcher struct {
 	mutex     sync.RWMutex
 }
 
+// NewSqsDispatcher validates aws configs and creates new sqs dispatcher
 func NewSqsDispatcher(dc SenderConfig, awsConfig model.AWSConfig, logger log.Logger, measures Measures) (*SQSDispatcher, error) {
+	err := validateAWSConfig(awsConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	dispatcher := SQSDispatcher{
 		awsConfig: awsConfig,
 		logger:    logger,
 		measures:  measures,
-	}
-	err := validateAWSConfig(awsConfig)
-	if err != nil {
-		return nil, err
 	}
 
 	return &dispatcher, nil
@@ -84,7 +86,8 @@ func validateAWSConfig(config model.AWSConfig) error {
 	return nil
 }
 
-func (s *SQSDispatcher) Start(_ context.Context) error {
+// Start creates a new aws session for event delivery to sqs
+func (s *SQSDispatcher) Start(context.Context) error {
 	sess, err := session.NewSession(&aws.Config{
 		Region:      aws.String(s.awsConfig.Sqs.Region),
 		Credentials: credentials.NewStaticCredentials(s.awsConfig.ID, s.awsConfig.AccessKey, s.awsConfig.SecretKey),
@@ -98,7 +101,7 @@ func (s *SQSDispatcher) Start(_ context.Context) error {
 
 }
 
-// called to deliver event
+// Send called to deliver event
 func (s *SQSDispatcher) Send(msg *wrp.Message) {
 	url := s.awsConfig.Sqs.QueueURL
 	defer func() {
@@ -142,6 +145,7 @@ func (s *SQSDispatcher) Send(msg *wrp.Message) {
 
 }
 
+// Update creates a new aws session with updated credentials for a norn
 func (s *SQSDispatcher) Update(norn model.Norn) {
 
 	s.mutex.Lock()
@@ -150,7 +154,7 @@ func (s *SQSDispatcher) Update(norn model.Norn) {
 
 	err := s.Start(nil)
 	if err != nil {
-		fmt.Errorf("failed to update aws session")
+		_ = fmt.Errorf("failed to update aws session")
 		return
 	}
 

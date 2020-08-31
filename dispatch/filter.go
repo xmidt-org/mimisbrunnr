@@ -33,12 +33,14 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-kit/kit/metrics"
+	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/logging"
 	"github.com/xmidt-org/webpa-common/semaphore"
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
+// Filter is used to implement Filterer interface
 type Filter struct {
 	norn         model.Norn
 	filterQueue  atomic.Value
@@ -48,7 +50,7 @@ type Filter struct {
 	dropUntil    time.Time
 	maxWorkers   int
 	workers      semaphore.Interface
-	failureMsg   FailureMessage
+	failureMsg   failureMessage
 	cutOffPeriod time.Duration
 	logger       log.Logger
 	sender       func(*http.Request) (*http.Response, error)
@@ -56,20 +58,20 @@ type Filter struct {
 	dispatcher   D
 }
 
+// FilterConfig contains config to construct Filter
 type FilterConfig struct {
-	QueueSize    int
-	SenderConfig SenderConfig
+	QueueSize int
 }
 
+// D is dispatcher interface to send events via http or sqs
 type D interface {
 	Start(context.Context) error
 	Send(*wrp.Message)
 	Update(norn model.Norn)
 }
 
-type FailureMessage struct {
-	Text         string `json:"text"`
-	CutOffPeriod string `json:"cut_off_period"`
+type failureMessage struct {
+	Text string `json:"text"`
 }
 
 const (
@@ -78,21 +80,26 @@ const (
 )
 
 // failureText is human readable text for the failure message
-const FailureText = `Unfortunately, your endpoint is not able to keep up with the ` +
+const failureText = `Unfortunately, your endpoint is not able to keep up with the ` +
 	`traffic being sent to it.  Due to this circumstance, all notification traffic ` +
 	`is being cut off and dropped for a period of time.  Please increase your ` +
 	`capacity to handle notifications, or reduce the number of notifications ` +
 	`you have requested.`
 
+// NewFilter validates config and creates new Filter
 func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Client) (*Filter, error) {
 	if norn.DeviceID == "" {
 		return nil, fmt.Errorf("invalid deviceID")
 	}
+
+	if fc.QueueSize < eventParser.DefaultMinQueueSize {
+		fc.QueueSize = eventParser.DefaultMinQueueSize
+	}
+
 	filter := Filter{
 		dispatcher: dispatcher,
-		failureMsg: FailureMessage{
-			Text:         FailureText,
-			CutOffPeriod: fc.SenderConfig.CutOffPeriod.String(),
+		failureMsg: failureMessage{
+			Text: failureText,
 		},
 		norn:   norn,
 		sender: (sender).Do,
@@ -101,14 +108,16 @@ func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Clie
 	return &filter, nil
 }
 
-func (f *Filter) Start(_ context.Context) error {
+// Start begins pulling from queue to deliver events
+func (f *Filter) Start(context.Context) error {
 	f.wg.Add(1)
 	go f.sendEvents()
 	return nil
 
 }
 
-func (f *Filter) Stop(_ context.Context) error {
+// Stop closes the queue and resets its metric
+func (f *Filter) Stop(context.Context) error {
 	close(f.filterQueue.Load().(chan *wrp.Message))
 	f.mutex.Lock()
 	f.measures.EventQueueDepthGauge.Set(0.0)
@@ -117,6 +126,8 @@ func (f *Filter) Stop(_ context.Context) error {
 	return nil
 }
 
+// Filter checks if the event's deviceID matches deviceID of norn
+// and queue it accordingly
 func (f *Filter) Filter(deviceID string, event *wrp.Message) {
 	if deviceID == f.norn.DeviceID {
 		select {
@@ -130,7 +141,7 @@ func (f *Filter) Filter(deviceID string, event *wrp.Message) {
 	}
 }
 
-// called if queue is filled
+// queueOverflow called if queue is filled
 func (f *Filter) queueOverflow() {
 
 	f.mutex.Lock()
@@ -254,6 +265,7 @@ Loop:
 
 }
 
+// Update will update the time a norn expires
 func (f *Filter) Update(norn model.Norn) {
 	f.mutex.Lock()
 	if f.norn.ExpiresAt != norn.ExpiresAt {

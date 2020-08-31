@@ -201,32 +201,80 @@ log:
 
 
 ########################################
-#   Registry Related Configuration
+#   Norn Registry Related Configuration
 ########################################
 
-# Registry Config for setting up argus
-registryConfig: 
-  argusConfig:
+# nornRegistry provides configuration for storing and retrieving norns from argus 
+nornRegistry: 
+  
+  # argus contains configuration needed to connect to it
+  argus:
+
+    # bucket is used to store and retrieve norns
     bucket: "norns-mimisbrunnr"
+
+    # address is the location to connect to argus
     address: "http://argus:6600"
+
+    # pullInterval is how often to call argus to update Norns
     pullInterval: "2s"
+
+    # auth is the authentication method for argus
     auth:
+
+      # basic configures basic authentication for argus
+      # Must be of form: 'Basic xyz=='
       basic: "Basic dXNlcjpwYXNz"
-      # jwt:
-      #   requestHeaders:
-      #   authURL: ""
-      #   timeout: "1m"
-      #   buffer: "1m"
+      
+#
+#      # jwt configures jwt style authentication for argus.
+#      JWT:
+#        # requestHeaders are added to the request for the token.
+#        # (Optional)
+#        # requestHeaders:
+#        #   "": ""
+#
+#        # authURL is the URL to access for the token.
+#        authURL: ""
+#
+#        # timeout is how long the request to get the token will take before
+#        # timing out.
+#        timeout: "1m"
+#
+#        # buffer is the length of time before a token expires to get a new token.
+#        buffer: "2m"
+
 
 
 ########################################
 #   Dispatcher Related Configuration
 ########################################
-senderConfig:
+
+# sender provides details for each "sender" that services the unique
+# norn url endpoint
+sender:
+
+  # numWorkersPerSender defines the maximum number of outgoing concurrent
+  # HTTP client requests to a particular webhook url.  This number is for
+  # THIS server only, to determine the total maximum, multiply this value
+  # by the number of caducues machines.
   numWorkersPerSender: 100
+
+  # responseHeaderTimeout is the time to wait for a response before giving up
+  # and marking the delivery a failure
   responseHeaderTimeout: 10s
+
+  # idleConnTimeout is the amount of time a connection will remain idle 
+  # before closing itself
+  # Zero means no limit
   idleConnTimeout: 1s
+
+  # deliveryInterval is the time to wait after a failed delivery attempt
+  # before attempting to deliver again
   deliveryInterval: 10ms
+
+  # deliveryRetries is the maximum number of delivery attempts caduceus will
+  # make before dropping an event
   deliveryRetries: 1
 
 
@@ -234,9 +282,30 @@ senderConfig:
 ########################################
 #   Event Parser Related Configuration
 ########################################
-parserConfig:
+
+# requestParser provides the information needed for starting the parser, which 
+# parses the deviceID from events.
+parser:
+
+  # queueSize provides the maximum number of events that can be added to the 
+  # queue. Once events are taken off the queue, the deviceID is parsed from the event.  
+  # If a value below 5 is chosen, it defaults to 5.
+  # (Optional) defaults to 5
   queueSize: 100
+
+  # maxWorkers provides the maximum number of workers parsing events at a 
+  # time. If a value below 5 is chosen, it defaults to 5.
+  # (Optional) defaults to 5
   maxWorkers: 100
+
+  # regexRules provides rules for events whose destinations match the regular 
+  # expression. Mimisbrunnr uses the first rule whose regex matches an event's destination. 
+  # If the event matches the regex of a rule, Mimisbrunnr gets instructions on 
+  # how to parse the deviceID based on the type of event (eventType).
+  # The eventType indicates where to find the device id in the event. If the 
+  # event type is "State", the device id is parsed out of the event Destination.
+  # Otherwise, the event Source is used as the device id.
+  # eventType options: "State", "Default" 
   regexRules:
       - regex: ".*/online$"
         storePayload: true
@@ -251,7 +320,13 @@ parserConfig:
 ########################################
 #   Filter Related Configuration
 ########################################
-filterConfig:
+
+# filter provides the information needed for starting to send events, which 
+# which is done once events are filtered by deviceID.
+filter:
+
+  # queueSize provides the max number of event that can be stored on the 
+  # queue. Once events are taken off the queue, they will sent to dispatcher for 
+  # delivery. If a value below 5 is chosen, it defaults to 5.
+  # (Optional) defaults to 5
   queueSize: 500
-  senderConfig:
-    numWorkersPerSender: 100

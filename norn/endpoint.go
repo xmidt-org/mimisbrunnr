@@ -53,6 +53,7 @@ type IdOwnerItem struct {
 	Item  argus.Item
 }
 
+// NewPostEndpoint returns the endpoint for /events handler
 func NewPostEndpoint(r *registry.Registry) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -69,6 +70,7 @@ func NewPostEndpoint(r *registry.Registry) endpoint.Endpoint {
 	}
 }
 
+// NewEventsEndpointDecode returns DecodeRequestFunc wrapper for the /events endpoint
 func NewPostEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		payload, err := ioutil.ReadAll(req.Body)
@@ -99,6 +101,7 @@ func NewPostEndpointDecode() kithttp.DecodeRequestFunc {
 	}
 }
 
+// NewPutEndpointDecoder returns DecodeRequestFunc wrapper for the /norns/{id} endpoint
 func NewPutEndpointDecoder() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		nornID := mux.Vars(req)
@@ -132,6 +135,7 @@ func NewPutEndpointDecoder() kithttp.DecodeRequestFunc {
 	}
 }
 
+// NewDeleteEndpoint returns the endpoint for /norns/{id} handler
 func NewDeleteEndpoint(r *registry.Registry) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -157,6 +161,7 @@ func NewDeleteEndpoint(r *registry.Registry) endpoint.Endpoint {
 
 }
 
+// NewDeleteEndpointDecode returns DecodeRequestFunc wrapper for the /norns/{id} endpoint
 func NewDeleteEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		nornID := mux.Vars(req)
@@ -170,6 +175,7 @@ func NewDeleteEndpointDecode() kithttp.DecodeRequestFunc {
 	}
 }
 
+// NewGetAllEndpoint returns the endpoint for /norns handler
 func NewGetAllEndpoint(r *registry.Registry) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -198,6 +204,7 @@ func NewGetAllEndpoint(r *registry.Registry) endpoint.Endpoint {
 	}
 }
 
+// NewGetAllEndpointDecode returns DecodeRequestFunc wrapper for the /norns endpoint
 func NewGetAllEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		// use bascule stuff here for owner
@@ -208,6 +215,7 @@ func NewGetAllEndpointDecode() kithttp.DecodeRequestFunc {
 	}
 }
 
+// NewSetEndpointEncode returns EncodeResponseFunc wrapper for the /norns endpoint
 func NewSetEndpointEncode() kithttp.EncodeResponseFunc {
 	return func(ctx context.Context, resp http.ResponseWriter, value interface{}) error {
 		if value != nil {

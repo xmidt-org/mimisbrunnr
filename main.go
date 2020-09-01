@@ -111,9 +111,14 @@ func main() {
 				err := v.UnmarshalKey("parserConfig", &config)
 				return *config, err
 			},
-			func(v *viper.Viper) (dispatch.DispatcherConfig, error) {
-				config := new(dispatch.DispatcherConfig)
-				err := v.UnmarshalKey("dispatcherConfig", &config)
+			func(v *viper.Viper) (dispatch.SenderConfig, error) {
+				config := new(dispatch.SenderConfig)
+				err := v.UnmarshalKey("senderConfig", &config)
+				return *config, err
+			},
+			func(v *viper.Viper) (dispatch.FilterConfig, error) {
+				config := new(dispatch.FilterConfig)
+				err := v.UnmarshalKey("filterConfig", &config)
 				return *config, err
 			},
 			manager.Provide,

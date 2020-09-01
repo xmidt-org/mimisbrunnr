@@ -25,12 +25,15 @@ import (
 
 type ManagerIn struct {
 	fx.In
-	DispatcherConfig dispatch.DispatcherConfig
+
+	DispatcherConfig dispatch.SenderConfig
+	FilterConfig     dispatch.FilterConfig
 	Logger           log.Logger
+	Measures         dispatch.Measures
 }
 
 func Provide(in ManagerIn) (*Manager, error) {
-	m, err := NewManager(in.DispatcherConfig, in.Logger)
+	m, err := NewManager(in.DispatcherConfig, in.FilterConfig, in.Logger, in.Measures)
 	if err != nil {
 		return nil, err
 	}

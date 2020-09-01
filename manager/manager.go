@@ -37,42 +37,75 @@ import (
 )
 
 type Manager struct {
-	nornsDispatch    map[string]nornDispatcher
-	dispatcherConfig dispatch.DispatcherConfig
+	idFilter         map[string]nornFilter
+	urlDispatcher    map[string]dispatch.D
+	dispatcherConfig dispatch.SenderConfig
+	filterConfig     dispatch.FilterConfig
 	logger           log.Logger
 	mutex            sync.RWMutex
+	measures         dispatch.Measures
+	sender           *http.Client
 }
 
-type nornDispatcher struct {
-	norn       model.Norn
+type nornFilter struct {
+	norn   model.Norn
+	filter Filterer
+}
+
+type endpointDispatcher struct {
+	endpoint   string
 	dispatcher dispatch.D
 }
 
-func NewManager(dc dispatch.DispatcherConfig, logger log.Logger) (*Manager, error) {
+type Filterer interface {
+	Start(context.Context) error
+	Filter(deviceID string, event *wrp.Message)
+	Update(norn model.Norn)
+	Stop(context.Context) error
+}
+
+func NewManager(dc dispatch.SenderConfig, fc dispatch.FilterConfig, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
+	transport := NewTransport(dc)
+	sender := &http.Client{
+		Transport: transport,
+	}
+
 	return &Manager{
-		nornsDispatch:    map[string]nornDispatcher{},
+		idFilter:         map[string]nornFilter{},
+		urlDispatcher:    map[string]dispatch.D{},
 		dispatcherConfig: dc,
+		filterConfig:     fc,
 		logger:           logger,
+		measures:         measures,
+		sender:           sender,
 	}, nil
 }
 
-func NewTransport(dc dispatch.DispatcherConfig) http.RoundTripper {
+func NewTransport(dc dispatch.SenderConfig) http.RoundTripper {
 	var transport http.RoundTripper = &http.Transport{
 		TLSClientConfig:       &tls.Config{},
-		MaxIdleConnsPerHost:   dc.SenderConfig.NumWorkersPerSender,
-		ResponseHeaderTimeout: dc.SenderConfig.ResponseHeaderTimeout,
-		IdleConnTimeout:       dc.SenderConfig.IdleConnTimeout,
+		MaxIdleConnsPerHost:   dc.NumWorkersPerSender,
+		ResponseHeaderTimeout: dc.ResponseHeaderTimeout,
+		IdleConnTimeout:       dc.IdleConnTimeout,
 	}
 	return transport
 }
 
 // chrysom client listener
 func (m *Manager) Update(items []argus.Item) {
-	recentMap := make(map[string]model.Norn)
-	newNorns := []nornDispatcher{}
-	oldNorns := []dispatch.D{}
+	recentIDMap := make(map[string]model.Norn)
+	recentURLMap := make(map[string]model.Norn)
 
-	transport := NewTransport(m.dispatcherConfig)
+	newNorns := []nornFilter{}
+	newDispatchers := []endpointDispatcher{}
+	oldFilterNorns := []Filterer{}
+	oldDispatcherUrls := []dispatch.D{}
+
+	var (
+		dispatcher dispatch.D
+		filter     *dispatch.Filter
+		url        string
+	)
 
 	for _, item := range items {
 		id := item.Identifier
@@ -80,44 +113,94 @@ func (m *Manager) Update(items []argus.Item) {
 		if err != nil {
 			log.WithPrefix(m.logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
 		}
-		if _, ok := m.nornsDispatch[id]; ok {
-			recentMap[id] = norn
+		if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
+			url = norn.Destination.HttpConfig.URL
 		} else {
-			dispatcher, err := dispatch.NewDispatcher(m.dispatcherConfig, norn, transport)
-			if err == nil {
-				newNorns = append(newNorns, nornDispatcher{norn: norn, dispatcher: dispatcher})
-				recentMap[id] = norn
+			url = norn.Destination.AWSConfig.Sqs.QueueURL
+		}
+
+		if _, ok := m.urlDispatcher[url]; ok {
+			recentURLMap[url] = norn
+		} else {
+			if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
+				dispatcher, err = dispatch.NewHttpDispatcher(m.dispatcherConfig, norn.Destination.HttpConfig, m.sender, m.logger, m.measures)
+				if err != nil {
+					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+				} else {
+					dispatcher.Start(nil)
+					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
+					recentURLMap[url] = norn
+				}
 			} else {
+				dispatcher, err = dispatch.NewSqsDispatcher(m.dispatcherConfig, norn.Destination.AWSConfig, m.logger, m.measures)
+				if err != nil {
+					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+				} else {
+					dispatcher.Start(nil)
+					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
+					recentURLMap[url] = norn
+				}
+			}
+		}
+
+		if _, ok := m.idFilter[id]; ok {
+			recentIDMap[id] = norn
+		} else {
+			filter, err = dispatch.NewFilter(m.filterConfig, dispatcher, norn, m.sender)
+			if err != nil {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
+			} else {
+				filter.Start(nil)
+				newNorns = append(newNorns, nornFilter{norn: norn, filter: filter})
+				recentIDMap[id] = norn
 			}
 		}
 	}
 
-	for i, norndis := range m.nornsDispatch {
-		if val, ok := recentMap[i]; !ok {
-			oldNorns = append(oldNorns, norndis.dispatcher)
-			delete(m.nornsDispatch, i)
+	for i, nornFilter := range m.idFilter {
+		if norn, ok := recentIDMap[i]; !ok {
+			oldFilterNorns = append(oldFilterNorns, nornFilter.filter)
+			m.mutex.Lock()
+			delete(m.idFilter, i)
+			m.mutex.Unlock()
 		} else {
-			norndis.dispatcher.Update(val)
+			nornFilter.filter.Update(norn)
 		}
 	}
 
-	for _, norndis := range newNorns {
+	for i, dispatcher := range m.urlDispatcher {
+		if norn, ok := recentURLMap[i]; !ok {
+			oldDispatcherUrls = append(oldDispatcherUrls, dispatcher)
+			m.mutex.Lock()
+			delete(m.urlDispatcher, i)
+			m.mutex.Unlock()
+		} else {
+			dispatcher.Update(norn)
+		}
+	}
+
+	for _, nornFilter := range newNorns {
 		m.mutex.Lock()
-		m.nornsDispatch[norndis.norn.DeviceID] = norndis
+		m.idFilter[nornFilter.norn.DeviceID] = nornFilter
 		m.mutex.Unlock()
 	}
 
-	for _, dispatcher := range oldNorns {
-		dispatcher.Stop(nil)
+	for _, endpointDispatcher := range newDispatchers {
+		m.mutex.Lock()
+		m.urlDispatcher[endpointDispatcher.endpoint] = endpointDispatcher.dispatcher
+		m.mutex.Unlock()
+	}
+
+	for _, filter := range oldFilterNorns {
+		filter.Stop(nil)
 	}
 
 }
 
 func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.RLock()
-	for _, nd := range m.nornsDispatch {
-		nd.dispatcher.Dispatch(deviceID, event)
+	for _, fd := range m.idFilter {
+		fd.filter.Filter(deviceID, event)
 	}
 	m.mutex.Unlock()
 }
@@ -125,17 +208,17 @@ func (m *Manager) Send(deviceID string, event *wrp.Message) {
 func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
-			idOwner norn.IdOwnerItem
-			ok      bool
-			norndis nornDispatcher
+			idOwner    norn.IdOwnerItem
+			ok         bool
+			nornFilter nornFilter
 		)
 		if idOwner, ok = request.(norn.IdOwnerItem); !ok {
 			return nil, norn.BadRequestError{Request: request}
 		}
-		if norndis, ok = m.nornsDispatch[idOwner.ID]; ok {
-			return norndis.norn, nil
+		if nornFilter, ok = m.idFilter[idOwner.ID]; ok {
+			return nornFilter.norn, nil
 		}
-		return norndis.norn, nil
+		return nornFilter.norn, nil
 	}
 
 }

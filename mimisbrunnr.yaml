@@ -222,11 +222,12 @@ registryConfig:
 ########################################
 #   Dispatcher Related Configuration
 ########################################
-dispatcherConfig:
-  queueSize: 100
-  numWorkers: 100
-  senderConfig:
-    numWorkersPerSender: 100
+senderConfig:
+  numWorkersPerSender: 100
+  responseHeaderTimeout: 10s
+  idleConnTimeout: 1s
+  deliveryInterval: 10ms
+  deliveryRetries: 1
 
 
 
@@ -245,3 +246,12 @@ parserConfig:
         storePayload: true
         ruleTTL: 30s
         eventType: "State"
+
+
+########################################
+#   Filter Related Configuration
+########################################
+filterConfig:
+  queueSize: 500
+  senderConfig:
+    numWorkersPerSender: 100

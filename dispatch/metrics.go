@@ -36,6 +36,9 @@ const (
 	ConsumerDeliverUntilGauge     = "consumer_deliver_until"
 	DeliveryCounter               = "delivery_count"
 	DroppedPanic                  = "dropped_panic_count"
+	DroppedNetworkErrCounter      = "dropped_network_error_count"
+	DroppedInvalidConfig          = "dropped_invalid_config"
+	DroppedExpiredCounter         = "dropped_expired_count"
 )
 
 func ProvideMetrics() fx.Option {
@@ -94,23 +97,41 @@ func ProvideMetrics() fx.Option {
 				Help: "Count of dropped messages due to panic",
 			},
 		),
+		xmetrics.ProvideCounter(
+			prometheus.CounterOpts{
+				Name: DroppedNetworkErrCounter,
+				Help: "Count of dropped messages due to network error",
+			},
+		),
+		xmetrics.ProvideCounter(
+			prometheus.CounterOpts{
+				Name: DroppedInvalidConfig,
+				Help: "Count of dropped messages due to invalid configuration",
+			},
+		),
+		xmetrics.ProvideCounter(
+			prometheus.CounterOpts{
+				Name: DroppedExpiredCounter,
+				Help: "Count of dropped messages due to expired norn",
+			},
+		),
 	)
 }
 
 type Measures struct {
-	EventQueueDepthGauge     metrics.Gauge
-	DroppedQueueCount        metrics.Counter
-	WorkersCount             metrics.Gauge
-	DropUntilGauge           metrics.Gauge
-	CutOffCounter            metrics.Counter
-	DroppedCutoffCounter     metrics.Counter
-	ContentTypeCounter       metrics.Counter
-	DeliverUntilGauge        metrics.Gauge
-	DroppedNetworkErrCounter metrics.Counter
-	DeliveryCounter          metrics.Counter
-	DroppedInvalidConfig     metrics.Counter
-	DroppedExpiredCounter    metrics.Counter
-	DroppedPanicCounter      metrics.Counter
+	fx.In
+	EventQueueDepthGauge     metrics.Gauge   `name:"event_queue_depth"`
+	DroppedQueueCount        metrics.Counter `name:"dropped_queue_count"`
+	WorkersCount             metrics.Gauge   `name:"workers_count"`
+	DropUntilGauge           metrics.Gauge   `name:"consumer_drop_until"`
+	CutOffCounter            metrics.Counter `name:"slow_consumer_cut_off_count"`
+	DroppedCutoffCounter     metrics.Counter `name:"slow_consumer_dropped_message_count"`
+	ContentTypeCounter       metrics.Counter `name:"incoming_content_type_count"`
+	DroppedNetworkErrCounter metrics.Counter `name:"dropped_network_error_count"`
+	DeliveryCounter          metrics.Counter `name:"delivery_count"`
+	DroppedInvalidConfig     metrics.Counter `name:"dropped_invalid_config"`
+	DroppedExpiredCounter    metrics.Counter `name:"dropped_expired_count"`
+	DroppedPanicCounter      metrics.Counter `name:"dropped_panic_count"`
 }
 
 func NewMeasures(p provider.Provider) *Measures {
@@ -122,7 +143,6 @@ func NewMeasures(p provider.Provider) *Measures {
 		CutOffCounter:            p.NewCounter(SlowConsumerCounter),
 		DroppedCutoffCounter:     p.NewCounter(SlowConsumerDroppedMsgCounter),
 		ContentTypeCounter:       p.NewCounter(IncomingContentTypeCounter),
-		DeliverUntilGauge:        p.NewGauge(ConsumerDeliverUntilGauge),
 		DroppedNetworkErrCounter: p.NewCounter(SlowConsumerDroppedMsgCounter),
 		DeliveryCounter:          p.NewCounter(DeliveryCounter),
 		DroppedInvalidConfig:     p.NewCounter(SlowConsumerDroppedMsgCounter),

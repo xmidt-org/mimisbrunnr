@@ -19,6 +19,7 @@ package eventParser
 
 import (
 	"context"
+	"errors"
 	"io/ioutil"
 	"net/http"
 	"path"
@@ -43,6 +44,8 @@ const (
 	DefaultTTL          = time.Duration(5) * time.Minute
 	MinMaxWorkers       = 5
 	DefaultMinQueueSize = 5
+	reasonLabel         = "reason"
+	queueFullReason     = "queue_full"
 )
 
 type EventSenderFunc func(deviceID string, event *wrp.Message)
@@ -58,7 +61,7 @@ type EventParser struct {
 	requestQueue atomic.Value
 	parseWorkers semaphore.Interface
 	logger       log.Logger
-	measures     *Measures
+	measures     Measures
 	wg           sync.WaitGroup
 	opt          ParserConfig
 	sender       EventSenderFunc
@@ -68,7 +71,7 @@ type Response struct {
 	response int
 }
 
-func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig) (*EventParser, error) {
+func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, measures Measures) (*EventParser, error) {
 	if o.MaxWorkers < MinMaxWorkers {
 		o.MaxWorkers = MinMaxWorkers
 	}
@@ -82,11 +85,16 @@ func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig) 
 		return nil, emperror.Wrap(err, "failed to create rules from config")
 	}
 
+	if (measures == Measures{}) {
+		return nil, errors.New("measures not set for parser")
+	}
+
 	eventParser := EventParser{
 		parserRules:  parsedRules,
 		parseWorkers: workers,
 		opt:          o,
 		sender:       sender,
+		measures:     measures,
 	}
 	return &eventParser, nil
 }
@@ -103,13 +111,9 @@ func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 
 		select {
 		case p.requestQueue.Load().(chan *wrp.Message) <- message:
-			if p.measures != nil {
-				p.measures.EventParsingQueue.Add(1.0)
-			}
+			p.measures.EventParsingQueue.Add(1.0)
 		default:
-			if p.measures != nil {
-				p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
-			}
+			p.measures.DroppedEventsParsingCount.With(reasonLabel, queueFullReason).Add(1.0)
 			return &Response{
 				response: http.StatusTooManyRequests,
 			}, nil
@@ -165,9 +169,10 @@ func (p *EventParser) parseEvents() {
 	queue := p.requestQueue.Load().(chan *wrp.Message)
 	select {
 	case message = <-queue:
-		if p.measures != nil {
-			p.measures.EventParsingQueue.Add(-1.0)
-		}
+		p.measures.EventParsingQueue.Add(-1.0)
+		// if p.measures != nil {
+		// 	p.measures.EventParsingQueue.Add(-1.0)
+		// }
 		p.parseWorkers.Acquire()
 		go p.parseDeviceID(message)
 	}

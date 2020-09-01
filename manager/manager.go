@@ -127,6 +127,7 @@ func (m *Manager) Update(items []argus.Item) {
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
+					dispatcher.Start(nil)
 					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
 					recentURLMap[url] = norn
 				}
@@ -135,6 +136,7 @@ func (m *Manager) Update(items []argus.Item) {
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
+					dispatcher.Start(nil)
 					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
 					recentURLMap[url] = norn
 				}
@@ -148,6 +150,7 @@ func (m *Manager) Update(items []argus.Item) {
 			if err != nil {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			} else {
+				filter.Start(nil)
 				newNorns = append(newNorns, nornFilter{norn: norn, filter: filter})
 				recentIDMap[id] = norn
 			}

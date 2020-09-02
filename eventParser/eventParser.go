@@ -19,6 +19,7 @@ package eventParser
 
 import (
 	"context"
+	"errors"
 	"io/ioutil"
 	"net/http"
 	"path"
@@ -83,6 +84,10 @@ func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, 
 	parsedRules, err := rules.NewRules(o.RegexRules)
 	if err != nil {
 		return nil, emperror.Wrap(err, "failed to create rules from config")
+	}
+
+	if (measures == Measures{}) {
+		return nil, errors.New("measures not set for parser")
 	}
 
 	eventParser := EventParser{

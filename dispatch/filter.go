@@ -65,8 +65,15 @@ type FilterConfig struct {
 
 // D is dispatcher interface to send events via http or sqs
 type D interface {
+	// Start begins a new aws session to deliver events to sqs and
+	// returns any error
 	Start(context.Context) error
+
+	// Send will deliver message either through http or sqs
 	Send(*wrp.Message)
+
+	// Update is called for each norn when there are any changes or updates
+	// to its config
 	Update(norn model.Norn)
 }
 
@@ -254,7 +261,11 @@ Loop:
 
 			f.workers.Acquire()
 			f.measures.WorkersCount.Add(1.0)
-			go f.dispatcher.Send(en)
+			go func() {
+				f.dispatcher.Send(en)
+				f.workers.Release()
+				f.measures.WorkersCount.Add(-1.0)
+			}()
 		}
 		for i := 0; i < f.maxWorkers; i++ {
 			f.workers.Acquire()

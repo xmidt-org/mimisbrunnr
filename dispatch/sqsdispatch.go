@@ -47,7 +47,7 @@ type SQSDispatcher struct {
 }
 
 // NewSqsDispatcher validates aws configs and creates new sqs dispatcher
-func NewSqsDispatcher(dc SenderConfig, awsConfig model.AWSConfig, logger log.Logger, measures Measures) (*SQSDispatcher, error) {
+func NewSqsDispatcher(ds *DispatcherSender, awsConfig model.AWSConfig, logger log.Logger, measures Measures) (*SQSDispatcher, error) {
 	err := validateAWSConfig(awsConfig)
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func validateAWSConfig(config model.AWSConfig) error {
 	return nil
 }
 
-// Start creates a new aws session for event delivery to sqs
+// Start creates a new aws session for event delivery to sqs.
 func (s *SQSDispatcher) Start(context.Context) error {
 	sess, err := session.NewSession(&aws.Config{
 		Region:      aws.String(s.awsConfig.Sqs.Region),
@@ -102,7 +102,7 @@ func (s *SQSDispatcher) Start(context.Context) error {
 
 }
 
-// Send called to deliver event
+// Send is called to deliver event
 func (s *SQSDispatcher) Send(msg *wrp.Message) {
 	url := s.awsConfig.Sqs.QueueURL
 	defer func() {
@@ -160,7 +160,7 @@ func (s *SQSDispatcher) Update(norn model.Norn) {
 
 	err := s.Start(nil)
 	if err != nil {
-		_ = fmt.Errorf("failed to update aws session")
+		s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to update aws session.", "error", err)
 		return
 	}
 

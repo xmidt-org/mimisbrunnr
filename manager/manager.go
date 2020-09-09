@@ -35,16 +35,20 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-// Manager keeps track of all recent Filterers and Dispatchers
+// Manager is in charge of fanning out events to its respective dispatcher.
+// It keeps track of all recent Filterers and Dispatchers part of its map and is
+// responsible for updating or removing them.
 type Manager struct {
 	idFilter         map[string]nornFilter
 	urlDispatcher    map[string]dispatch.D
-	dispatcherConfig dispatch.SenderConfig
-	filterConfig     dispatch.FilterConfig
-	logger           log.Logger
-	mutex            sync.RWMutex
-	measures         dispatch.Measures
-	sender           *http.Client
+	dispatcherConfig *dispatch.DispatcherSender
+	filterConfig     *dispatch.FilterSender
+	// dispatcherConfig dispatch.SenderConfig
+	// filterConfig     dispatch.FilterConfig
+	logger   log.Logger
+	mutex    sync.RWMutex
+	measures dispatch.Measures
+	sender   *http.Client
 }
 
 type nornFilter struct {
@@ -74,23 +78,35 @@ type Filterer interface {
 	Stop(context.Context) error
 }
 
-func newManager(dc dispatch.SenderConfig, fc dispatch.FilterConfig, transport http.RoundTripper, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
+// NewEventParser constructs a Manager from the provided configs.
+func NewManager(sc dispatch.SenderConfig, transport http.RoundTripper, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
 	sender := &http.Client{
 		Transport: transport,
 	}
 
 	return &Manager{
-		idFilter:         map[string]nornFilter{},
-		urlDispatcher:    map[string]dispatch.D{},
-		dispatcherConfig: dc,
-		filterConfig:     fc,
-		logger:           logger,
-		measures:         measures,
-		sender:           sender,
+		idFilter:      map[string]nornFilter{},
+		urlDispatcher: map[string]dispatch.D{},
+		dispatcherConfig: &dispatch.DispatcherSender{
+			DeliveryInterval: sc.DeliveryInterval,
+			DeliveryRetries:  sc.DeliveryRetries,
+		},
+		filterConfig: &dispatch.FilterSender{
+			QueueSize:  sc.FilterQueueSize,
+			NumWorkers: sc.MaxWorkers,
+		},
+		logger:   logger,
+		measures: measures,
+		sender:   sender,
 	}, nil
 }
 
-// Update is the argus chrysom client listener
+// Update is the argus chrysom client listener. For every recent item that is provided
+// by argus, Update will check if the dispatcher and filter for an item already exists
+// as part of the manager's local cache (idFilter and urlDispatcher maps) and update cache
+// with the recent norn retrieved from item. If the norn is brand new, a new dispatcher and
+// filter is created for it and added to local cache. Any old dispatchers and filters is also
+// removed part of Update.
 func (m *Manager) Update(items []argus.Item) {
 	recentIDMap := make(map[string]model.Norn)
 	recentURLMap := make(map[string]model.Norn)
@@ -145,7 +161,7 @@ func (m *Manager) Update(items []argus.Item) {
 		if _, ok := m.idFilter[id]; ok {
 			recentIDMap[id] = norn
 		} else {
-			filter, err = dispatch.NewFilter(m.filterConfig, dispatcher, norn, m.sender)
+			filter, err = dispatch.NewFilter(m.filterConfig, dispatcher, norn, m.sender, m.measures)
 			if err != nil {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			} else {

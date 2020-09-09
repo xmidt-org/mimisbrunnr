@@ -58,22 +58,26 @@ type Filter struct {
 	dispatcher   D
 }
 
-// FilterConfig contains config to construct Filter
+// FilterConfig contains the configuration needed to construct a Filter.
 type FilterConfig struct {
 	QueueSize int
 }
 
-// D is dispatcher interface to send events via http or sqs
+// FilterSender contains config to contruct Filter
+type FilterSender struct {
+	QueueSize  int
+	NumWorkers int
+}
+
+// D is dispatcher interface that abstracts away the exact delivery mechanism (ie HTTP or SQS).
 type D interface {
-	// Start begins a new aws session to deliver events to sqs and
-	// returns any error
+	// Start sets up any initial sessions or connections needed in order to send events.
 	Start(context.Context) error
 
-	// Send will deliver message either through http or sqs
+	// Send delivers the message.  Sending is done concurrently, so no error is returned.
 	Send(*wrp.Message)
 
-	// Update is called for each norn when there are any changes or updates
-	// to its config
+	// Update is called to make sure the dispatcher keeps up to date with the norn config.
 	Update(norn model.Norn)
 }
 
@@ -82,8 +86,8 @@ type failureMessage struct {
 }
 
 const (
-	defaultMinQueueSize = 5
-	minMaxWorkers       = 5
+	defaultMinQueueSize = 100
+	minWorkers          = 5
 )
 
 // failureText is human readable text for the failure message
@@ -93,14 +97,18 @@ const failureText = `Unfortunately, your endpoint is not able to keep up with th
 	`capacity to handle notifications, or reduce the number of notifications ` +
 	`you have requested.`
 
-// NewFilter validates config and creates new Filter
-func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Client) (*Filter, error) {
+// NewFilter validates the config and creates a new Filter.
+func NewFilter(fs *FilterSender, dispatcher D, norn model.Norn, sender *http.Client, measures Measures) (*Filter, error) {
 	if norn.DeviceID == "" {
 		return nil, fmt.Errorf("invalid deviceID")
 	}
 
-	if fc.QueueSize < eventParser.DefaultMinQueueSize {
-		fc.QueueSize = eventParser.DefaultMinQueueSize
+	if fs.QueueSize < eventParser.DefaultMinQueueSize {
+		fs.QueueSize = eventParser.DefaultMinQueueSize
+	}
+
+	if fs.NumWorkers < minWorkers {
+		fs.NumWorkers = minWorkers
 	}
 
 	filter := Filter{
@@ -108,14 +116,15 @@ func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Clie
 		failureMsg: failureMessage{
 			Text: failureText,
 		},
-		norn:   norn,
-		sender: (sender).Do,
+		norn:     norn,
+		measures: &measures,
+		sender:   (sender).Do,
 	}
-	filter.filterQueue.Store(make(chan *wrp.Message, fc.QueueSize))
+	filter.filterQueue.Store(make(chan *wrp.Message, fs.QueueSize))
 	return &filter, nil
 }
 
-// Start begins pulling from queue to deliver events
+// Start begins pulling from queue to deliver events.
 func (f *Filter) Start(context.Context) error {
 	f.wg.Add(1)
 	go f.sendEvents()
@@ -123,7 +132,7 @@ func (f *Filter) Start(context.Context) error {
 
 }
 
-// Stop closes the queue and resets its metric
+// Stop closes the queue and resets its metric.
 func (f *Filter) Stop(context.Context) error {
 	close(f.filterQueue.Load().(chan *wrp.Message))
 	f.mutex.Lock()
@@ -133,8 +142,11 @@ func (f *Filter) Stop(context.Context) error {
 	return nil
 }
 
-// Filter checks if the event's deviceID matches deviceID of norn
-// and queue it accordingly
+// Filter decides if an event should be sent by checking if the
+// event's device ID matches the device ID of the norn.  If they match,
+// the event is queued to be dispatched.  If not, the event is dropped.
+// If the queue is full when queueing the event, the event is dropped, the
+// queue is emptied and the norn consumer is cut off.
 func (f *Filter) Filter(deviceID string, event *wrp.Message) {
 	if deviceID == f.norn.DeviceID {
 		select {
@@ -148,7 +160,9 @@ func (f *Filter) Filter(deviceID string, event *wrp.Message) {
 	}
 }
 
-// queueOverflow called if queue is filled
+// queueOverflow is called when the queue is full and can no longer enqueue
+// events. The norn is then cut off for a certain period of time and sends a
+// failure message to the provided failure URL for an HTTP event delivery mechanism.
 func (f *Filter) queueOverflow() {
 
 	f.mutex.Lock()
@@ -276,7 +290,7 @@ Loop:
 
 }
 
-// Update will update the time a norn expires
+// Update will update the time a norn expires.
 func (f *Filter) Update(norn model.Norn) {
 	f.mutex.Lock()
 	if f.norn.ExpiresAt != norn.ExpiresAt {

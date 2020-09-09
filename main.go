@@ -43,9 +43,12 @@ import (
 )
 
 const (
-	applicationName = "mimisbrunnr"
-	DefaultKeyID    = "current"
-	apiBase         = "api/v1"
+	applicationName  = "mimisbrunnr"
+	DefaultKeyID     = "current"
+	apiBase          = "api/v1"
+	minWorkers       = 100
+	minHeaderTimeout = 10 * time.Second
+	minQueueSize     = 100
 )
 
 var (
@@ -116,17 +119,21 @@ func main() {
 			func(v *viper.Viper) (dispatch.SenderConfig, error) {
 				config := new(dispatch.SenderConfig)
 				err := v.UnmarshalKey("sender", &config)
-				return *config, err
-			},
-			func(v *viper.Viper) (dispatch.FilterConfig, error) {
-				config := new(dispatch.FilterConfig)
-				err := v.UnmarshalKey("filter", &config)
+				if config.MaxWorkers < 100 {
+					config.MaxWorkers = minWorkers
+				}
+				if config.ResponseHeaderTimeout < minHeaderTimeout {
+					config.ResponseHeaderTimeout = minHeaderTimeout
+				}
+				if config.FilterQueueSize < 100 {
+					config.FilterQueueSize = minQueueSize
+				}
 				return *config, err
 			},
 			func(dc dispatch.SenderConfig) http.RoundTripper {
 				var transport http.RoundTripper = &http.Transport{
 					TLSClientConfig:       &tls.Config{},
-					MaxIdleConnsPerHost:   dc.NumWorkersPerSender,
+					MaxIdleConnsPerHost:   dc.MaxWorkers,
 					ResponseHeaderTimeout: dc.ResponseHeaderTimeout,
 					IdleConnTimeout:       dc.IdleConnTimeout,
 				}

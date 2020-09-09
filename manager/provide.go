@@ -30,15 +30,15 @@ type ManagerIn struct {
 	fx.In
 
 	DispatcherConfig dispatch.SenderConfig
-	FilterConfig     dispatch.FilterConfig
-	Logger           log.Logger
-	Measures         dispatch.Measures
-	Transport        http.RoundTripper
+	// FilterConfig     dispatch.FilterConfig
+	Logger    log.Logger
+	Measures  dispatch.Measures
+	Transport http.RoundTripper
 }
 
 // Provide is an uber/fx style provider for this package's components
 func Provide(in ManagerIn) (*Manager, error) {
-	m, err := newManager(in.DispatcherConfig, in.FilterConfig, in.Transport, in.Logger, in.Measures)
+	m, err := NewManager(in.DispatcherConfig, in.Transport, in.Logger, in.Measures)
 	if err != nil {
 		return nil, err
 	}

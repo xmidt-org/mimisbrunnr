@@ -204,22 +204,22 @@ log:
 #   Norn Registry Related Configuration
 ########################################
 
-# nornRegistry provides configuration for storing and retrieving norns from argus 
+# nornRegistry provides configuration for storing and retrieving norns from argus.
 nornRegistry: 
   
-  # argus contains configuration needed to connect to it
+  # argus contains the required configuration that is need to store and retrieve norns.
   argus:
 
-    # bucket is used to store and retrieve norns
+    # bucket is used to store and retrieve norns.
     bucket: "norns-mimisbrunnr"
 
-    # address is the location to connect to argus
+    # address is the location to connect to argus.
     address: "http://argus:6600"
 
-    # pullInterval is how often to call argus to update Norns
+    # pullInterval is how often to call argus to update Norns.
     pullInterval: "2s"
 
-    # auth is the authentication method for argus
+    # auth is the authentication method for argus.
     auth:
 
       # basic configures basic authentication for argus
@@ -250,18 +250,20 @@ nornRegistry:
 #   Dispatcher Related Configuration
 ########################################
 
-# sender provides details for each "sender" that services the unique
-# norn url endpoint
+# sender provides details to set up each "sender" that is required for for dispatcher
+# to deliver events.
 sender:
 
   # numWorkersPerSender defines the maximum number of outgoing concurrent
   # HTTP client requests to a particular webhook url.  This number is for
   # THIS server only, to determine the total maximum, multiply this value
   # by the number of caducues machines.
-  numWorkersPerSender: 100
+  # (Optional) defaults to a minimum of 5
+  maxWorkers: 100
 
   # responseHeaderTimeout is the time to wait for a response before giving up
   # and marking the delivery a failure
+  # (Optional) default to a minimum of 10s
   responseHeaderTimeout: 10s
 
   # idleConnTimeout is the amount of time a connection will remain idle 
@@ -273,9 +275,15 @@ sender:
   # before attempting to deliver again
   deliveryInterval: 10ms
 
-  # deliveryRetries is the maximum number of delivery attempts caduceus will
+  # deliveryRetries is the maximum number of delivery attempts mimisbrunnr will
   # make before dropping an event
   deliveryRetries: 1
+
+  # queueSize provides the max number of event that can be stored on the 
+  # queue. Once events are taken off the queue, they will sent to dispatcher for 
+  # delivery.
+  # (Optional) defaults to 100
+  filterQueueSize: 500
 
 
 
@@ -316,17 +324,3 @@ parser:
         ruleTTL: 30s
         eventType: "State"
 
-
-########################################
-#   Filter Related Configuration
-########################################
-
-# filter provides the information needed for starting to send events, which 
-# which is done once events are filtered by deviceID.
-filter:
-
-  # queueSize provides the max number of event that can be stored on the 
-  # queue. Once events are taken off the queue, they will sent to dispatcher for 
-  # delivery. If a value below 5 is chosen, it defaults to 5.
-  # (Optional) defaults to 5
-  queueSize: 500

@@ -40,14 +40,20 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-// SenderConfig contains config to construct HTTPDispatcher
+// SenderConfig contains config to construct HTTPDispatcher, Transport, and Filter
 type SenderConfig struct {
-	NumWorkersPerSender   int
+	MaxWorkers            int
 	ResponseHeaderTimeout time.Duration
 	IdleConnTimeout       time.Duration
-	CutOffPeriod          time.Duration
 	DeliveryInterval      time.Duration
 	DeliveryRetries       int
+	FilterQueueSize       int
+}
+
+// DispatcherSender contains config to construct HTTPDispatcher
+type DispatcherSender struct {
+	DeliveryInterval time.Duration
+	DeliveryRetries  int
 }
 
 // HTTPDispatcher implements the dispatcher interface to send events through http
@@ -62,7 +68,7 @@ type HTTPDispatcher struct {
 }
 
 // NewHTTPDispatcher creates http dispatcher used to implement dispatcher interface
-func NewHTTPDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
+func NewHTTPDispatcher(ds *DispatcherSender, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
 
 	_, err := url.ParseRequestURI(httpConfig.URL)
 	if err != nil {
@@ -70,32 +76,33 @@ func NewHTTPDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *htt
 		return nil, err
 	}
 
-	if dc.DeliveryRetries > 10 {
-		dc.DeliveryRetries = 10
+	if ds.DeliveryRetries > 10 {
+		ds.DeliveryRetries = 10
 	}
 
-	if dc.DeliveryInterval > 1*time.Hour {
-		dc.DeliveryInterval = 1 * time.Hour
+	if ds.DeliveryInterval > 1*time.Hour {
+		ds.DeliveryInterval = 1 * time.Hour
 	}
 
 	dispatcher := HTTPDispatcher{
 		httpConfig:       httpConfig,
 		sender:           (sender).Do,
 		logger:           logger,
-		deliveryRetries:  dc.DeliveryRetries,
-		deliveryInterval: dc.DeliveryInterval,
+		deliveryRetries:  ds.DeliveryRetries,
+		deliveryInterval: ds.DeliveryInterval,
 		measures:         measures,
 	}
 
 	return &dispatcher, nil
 }
 
-// Start is used to set up any long running routines needed
 func (h *HTTPDispatcher) Start(context.Context) error {
 	return nil
 }
 
-// Send is called to deliver event
+// Send uses the configured HTTP client to send a WRP message
+// as a JSON.  The request also includes a signature created from
+// hashing the norn secret against the wrp message.
 func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 	url := h.httpConfig.URL
 	defer func() {

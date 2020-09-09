@@ -30,6 +30,7 @@ import (
 	"emperror.dev/emperror"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	kithttp "github.com/go-kit/kit/transport/http"
 	db "github.com/xmidt-org/codex-db"
 	"github.com/xmidt-org/mimisbrunnr/norn"
@@ -46,7 +47,7 @@ const (
 	queueFullReason     = "queue_full"
 )
 
-// EventSenderFunc is the function type used to send events to Filterer
+// EventSenderFunc is the function type used pass events to manager.
 type EventSenderFunc func(deviceID string, event *wrp.Message)
 
 // ParserConfig is the config provided to create a new EventParser
@@ -176,7 +177,10 @@ func (p *EventParser) parseEvents() {
 	case message = <-queue:
 		p.measures.EventParsingQueue.Add(-1.0)
 		p.parseWorkers.Acquire()
-		go p.parseDeviceID(message)
+		err := p.parseDeviceID(message)
+		if err != nil {
+			p.logger.Log(level.Key(), level.InfoValue, logging.MessageKey(), "Failed to parse ID")
+		}
 	}
 
 	for i := 0; i < p.opt.MaxWorkers; i++ {
@@ -184,6 +188,7 @@ func (p *EventParser) parseEvents() {
 	}
 }
 
+// parseDeviceID uses the configured regex rules to parse the deviceID based on the event type.
 func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	var (
 		err      error

@@ -50,7 +50,7 @@ const (
 // EventSenderFunc is the function type used pass events to manager.
 type EventSenderFunc func(deviceID string, event *wrp.Message)
 
-// ParserConfig is the config provided to create a new EventParser
+// ParserConfig is the config provided to create a new EventParser.
 type ParserConfig struct {
 	QueueSize  int
 	MaxWorkers int
@@ -72,7 +72,7 @@ type Response struct {
 	response int
 }
 
-// NewEventParser validates and constructs an EventParser from provided configs
+// NewEventParser validates and constructs an EventParser from provided the configs.
 func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, measures Measures) (*EventParser, error) {
 	if o.MaxWorkers < MinMaxWorkers {
 		o.MaxWorkers = MinMaxWorkers
@@ -101,7 +101,7 @@ func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, 
 	return &eventParser, nil
 }
 
-// NewEventsEndpoint returns the endpoint for /events handler
+// NewEventsEndpoint returns the endpoint for /events handler.
 func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -127,7 +127,7 @@ func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 	}
 }
 
-// NewEventsEndpointDecode returns DecodeRequestFunc wrapper from the /events endpoint
+// NewEventsEndpointDecode returns DecodeRequestFunc wrapper from the /events endpoint.
 func NewEventsEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		var message *wrp.Message
@@ -145,7 +145,7 @@ func NewEventsEndpointDecode() kithttp.DecodeRequestFunc {
 	}
 }
 
-// NewEventsEndpointEncode returns EncodeResponseFunc wrapper from the /events endpoint
+// NewEventsEndpointEncode returns EncodeResponseFunc wrapper from the /events endpoint.
 func NewEventsEndpointEncode() kithttp.EncodeResponseFunc {
 	return func(ctx context.Context, resp http.ResponseWriter, value interface{}) error {
 		if value != nil {
@@ -155,7 +155,7 @@ func NewEventsEndpointEncode() kithttp.EncodeResponseFunc {
 	}
 }
 
-// Start creates the queue and begins to pull messages from it
+// Start creates the queue and begins to pull messages from it to parse.
 func (p *EventParser) Start() func(context.Context) error {
 
 	return func(ctx context.Context) error {
@@ -188,7 +188,8 @@ func (p *EventParser) parseEvents() {
 	}
 }
 
-// parseDeviceID uses the configured regex rules to parse the deviceID based on the event type.
+// parseDeviceID uses the configured regex rules to parse the deviceID from the event
+// based on the event type.
 func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	var (
 		err      error
@@ -232,7 +233,7 @@ func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 
 }
 
-// Stop closes the parser queue
+// Stop closes the parser queue.
 func (p *EventParser) Stop() func(context.Context) error {
 	return func(ctx context.Context) error {
 		close(p.requestQueue.Load().(chan *wrp.Message))

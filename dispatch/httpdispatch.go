@@ -40,7 +40,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-// SenderConfig contains config to construct HTTPDispatcher, Transport, and Filter
+// SenderConfig contains config to construct HTTPDispatcher, Transport, and Filter.
 type SenderConfig struct {
 	MaxWorkers            int
 	ResponseHeaderTimeout time.Duration
@@ -50,13 +50,13 @@ type SenderConfig struct {
 	FilterQueueSize       int
 }
 
-// DispatcherSender contains config to construct HTTPDispatcher
+// DispatcherSender contains config to construct a HTTPDispatcher.
 type DispatcherSender struct {
 	DeliveryInterval time.Duration
 	DeliveryRetries  int
 }
 
-// HTTPDispatcher implements the dispatcher interface to send events through http
+// HTTPDispatcher implements the dispatcher interface to send events through http.
 type HTTPDispatcher struct {
 	measures         Measures
 	logger           log.Logger
@@ -67,7 +67,7 @@ type HTTPDispatcher struct {
 	httpConfig       model.HttpConfig
 }
 
-// NewHTTPDispatcher creates http dispatcher used to implement dispatcher interface
+// NewHTTPDispatcher creates http dispatcher used to implement dispatcher interface.
 func NewHTTPDispatcher(ds *DispatcherSender, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
 
 	_, err := url.ParseRequestURI(httpConfig.URL)
@@ -179,7 +179,7 @@ func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 
 }
 
-// Update updates secret for http dispatcher for a norn
+// Update updates secret for http dispatcher for a norn.
 func (h *HTTPDispatcher) Update(norn model.Norn) {
 
 	h.mutex.Lock()

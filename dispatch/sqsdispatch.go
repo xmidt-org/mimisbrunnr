@@ -36,7 +36,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-// SQSDispatcher implements the dispatcher interface to send events to sqs
+// SQSDispatcher implements the dispatcher interface to send events to sqs.
 type SQSDispatcher struct {
 	wg        sync.WaitGroup
 	measures  Measures
@@ -46,7 +46,7 @@ type SQSDispatcher struct {
 	mutex     sync.RWMutex
 }
 
-// NewSqsDispatcher validates aws configs and creates new sqs dispatcher
+// NewSqsDispatcher validates aws configs and creates new a sqs dispatcher.
 func NewSqsDispatcher(ds *DispatcherSender, awsConfig model.AWSConfig, logger log.Logger, measures Measures) (*SQSDispatcher, error) {
 	err := validateAWSConfig(awsConfig)
 	if err != nil {
@@ -87,7 +87,7 @@ func validateAWSConfig(config model.AWSConfig) error {
 	return nil
 }
 
-// Start creates a new aws session for event delivery to sqs.
+// Start creates a new aws session with the provided aws configs for event delivery to sqs.
 func (s *SQSDispatcher) Start(context.Context) error {
 	sess, err := session.NewSession(&aws.Config{
 		Region:      aws.String(s.awsConfig.Sqs.Region),
@@ -102,7 +102,8 @@ func (s *SQSDispatcher) Start(context.Context) error {
 
 }
 
-// Send is called to deliver event
+// Send uses the configured sqs client to send a WRP message
+// as a JSON.
 func (s *SQSDispatcher) Send(msg *wrp.Message) {
 	url := s.awsConfig.Sqs.QueueURL
 	defer func() {
@@ -151,7 +152,7 @@ func (s *SQSDispatcher) Send(msg *wrp.Message) {
 
 }
 
-// Update creates a new aws session with updated credentials for a norn
+// Update creates a new aws session with updated credentials for a norn.
 func (s *SQSDispatcher) Update(norn model.Norn) {
 
 	s.mutex.Lock()

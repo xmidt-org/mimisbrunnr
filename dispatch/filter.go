@@ -40,7 +40,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-// Filter is used to implement Filterer interface
+// Filter is used to implement the Filterer interface.
 type Filter struct {
 	norn         model.Norn
 	filterQueue  atomic.Value
@@ -58,12 +58,7 @@ type Filter struct {
 	dispatcher   D
 }
 
-// FilterConfig contains the configuration needed to construct a Filter.
-type FilterConfig struct {
-	QueueSize int
-}
-
-// FilterSender contains config to contruct Filter
+// FilterSender contains config to contruct a Filter.
 type FilterSender struct {
 	QueueSize  int
 	NumWorkers int

@@ -43,12 +43,10 @@ type Manager struct {
 	urlDispatcher    map[string]dispatch.D
 	dispatcherConfig *dispatch.DispatcherSender
 	filterConfig     *dispatch.FilterSender
-	// dispatcherConfig dispatch.SenderConfig
-	// filterConfig     dispatch.FilterConfig
-	logger   log.Logger
-	mutex    sync.RWMutex
-	measures dispatch.Measures
-	sender   *http.Client
+	logger           log.Logger
+	mutex            sync.RWMutex
+	measures         dispatch.Measures
+	sender           *http.Client
 }
 
 type nornFilter struct {
@@ -62,19 +60,19 @@ type endpointDispatcher struct {
 	filter     Filterer
 }
 
-// Filterer used to filter events by deviceID
+// Filterer is used to filter events by deviceID.
 type Filterer interface {
-	// Start begins pulling from the filter queue to deliver events
+	// Start begins pulling from the filter queue to deliver events.
 	Start(context.Context) error
 
 	// Filter checks if the event's deviceID matches deviceID of norn
-	// and queue it accordingly
+	// and queue it accordingly.
 	Filter(deviceID string, event *wrp.Message)
 
-	// Update will update the time a norn expires
+	// Update will update the time a norn expires.
 	Update(norn model.Norn)
 
-	// Stop closes the filter queue and resets its metric
+	// Stop closes the filter queue and resets its metric.
 	Stop(context.Context) error
 }
 
@@ -212,7 +210,8 @@ func (m *Manager) Update(items []argus.Item) {
 
 }
 
-// Send will send the message to Filter
+// Send will send the message to Filter for it to be checked if norn's deviceID
+// matches the event's.
 func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.RLock()
 	for _, fd := range m.idFilter {
@@ -221,7 +220,7 @@ func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.Unlock()
 }
 
-// NewGetEndpoint returns the endpoint for /norns/{id} handler
+// NewGetEndpoint returns the endpoint for /norns/{id} handler.
 func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -240,7 +239,7 @@ func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 
 }
 
-// NewGetEndpointDecode returns DecodeRequestFunc wrapper from the /norns/{id} endpoint
+// NewGetEndpointDecode returns DecodeRequestFunc wrapper from the /norns/{id} endpoint.
 func NewGetEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		nornID := mux.Vars(req)

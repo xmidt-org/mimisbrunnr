@@ -208,6 +208,7 @@ log:
 nornRegistry: 
   
   # argus contains the required configuration that is need to store and retrieve norns.
+  # argus documentation: https://github.com/xmidt-org/argus#details
   argus:
 
     # bucket is used to store and retrieve norns.

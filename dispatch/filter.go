@@ -33,7 +33,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-kit/kit/metrics"
-	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/webpa-common/logging"
 	"github.com/xmidt-org/webpa-common/semaphore"
@@ -81,7 +80,7 @@ type failureMessage struct {
 }
 
 const (
-	defaultMinQueueSize = 100
+	defaultMinQueueSize = 5
 	minWorkers          = 5
 )
 
@@ -98,8 +97,8 @@ func NewFilter(fs *FilterSender, dispatcher D, norn model.Norn, sender *http.Cli
 		return nil, fmt.Errorf("invalid deviceID")
 	}
 
-	if fs.QueueSize < eventParser.DefaultMinQueueSize {
-		fs.QueueSize = eventParser.DefaultMinQueueSize
+	if fs.QueueSize < defaultMinQueueSize {
+		fs.QueueSize = defaultMinQueueSize
 	}
 
 	if fs.NumWorkers < minWorkers {
@@ -119,7 +118,8 @@ func NewFilter(fs *FilterSender, dispatcher D, norn model.Norn, sender *http.Cli
 	return &filter, nil
 }
 
-// Start begins pulling from queue to deliver events.
+// Start begins pulling events from the queue and calls sendEvents()
+// for it to be delivered by its dispatcher.
 func (f *Filter) Start(context.Context) error {
 	f.wg.Add(1)
 	go f.sendEvents()
@@ -231,6 +231,8 @@ func (f *Filter) queueOverflow() {
 
 }
 
+// empty is called when the filter queue is full. All events currently in the
+// queue are dropped and its metrics are reset.
 func (f *Filter) empty(droppedCounter metrics.Counter) {
 	droppedMsgs := f.filterQueue.Load().(chan *wrp.Message)
 	f.filterQueue.Store(make(chan *wrp.Message, f.queueSize))
@@ -239,6 +241,8 @@ func (f *Filter) empty(droppedCounter metrics.Counter) {
 	return
 }
 
+// sendEvents pulls event from the queue and calls the dispatcher
+// for it to be delivered, if the norn has not yet expired.
 func (f *Filter) sendEvents() {
 Loop:
 	for {

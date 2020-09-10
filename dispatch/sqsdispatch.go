@@ -46,7 +46,7 @@ type SQSDispatcher struct {
 	mutex     sync.RWMutex
 }
 
-// NewSqsDispatcher validates aws configs and creates new a sqs dispatcher.
+// NewSqsDispatcher validates aws configs and creates a sqs dispatcher.
 func NewSqsDispatcher(ds *DispatcherSender, awsConfig model.AWSConfig, logger log.Logger, measures Measures) (*SQSDispatcher, error) {
 	err := validateAWSConfig(awsConfig)
 	if err != nil {

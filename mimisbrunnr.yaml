@@ -211,15 +211,19 @@ nornRegistry:
   argus:
 
     # bucket is used to store and retrieve norns.
+    # (Required)
     bucket: "norns-mimisbrunnr"
 
     # address is the location to connect to argus.
+    # (Required)
     address: "http://argus:6600"
 
     # pullInterval is how often to call argus to update Norns.
+    # (Required)
     pullInterval: "2s"
 
     # auth is the authentication method for argus.
+    # (Required)
     auth:
 
       # basic configures basic authentication for argus
@@ -262,21 +266,24 @@ sender:
   maxWorkers: 100
 
   # responseHeaderTimeout is the time to wait for a response before giving up
-  # and marking the delivery a failure
+  # and marking the delivery a failure.
   # (Optional) default to a minimum of 10s
   responseHeaderTimeout: 10s
 
   # idleConnTimeout is the amount of time a connection will remain idle 
-  # before closing itself
+  # before closing itself.
   # Zero means no limit
+  # (Required)
   idleConnTimeout: 1s
 
   # deliveryInterval is the time to wait after a failed delivery attempt
   # before attempting to deliver again
+  # (Required) max delivery interval set to 1 hour
   deliveryInterval: 10ms
 
   # deliveryRetries is the maximum number of delivery attempts mimisbrunnr will
-  # make before dropping an event
+  # make before dropping an event.
+  # (Required) max retries is set to 10
   deliveryRetries: 1
 
   # queueSize provides the max number of event that can be stored on the 
@@ -297,13 +304,12 @@ parser:
 
   # queueSize provides the maximum number of events that can be added to the 
   # queue. Once events are taken off the queue, the deviceID is parsed from the event.  
-  # If a value below 5 is chosen, it defaults to 5.
-  # (Optional) defaults to 5
+  # (Optional) defaults to a minimum value 5
   queueSize: 100
 
   # maxWorkers provides the maximum number of workers parsing events at a 
-  # time. If a value below 5 is chosen, it defaults to 5.
-  # (Optional) defaults to 5
+  # time.
+  # (Optional) defaults to a minimum value 5
   maxWorkers: 100
 
   # regexRules provides rules for events whose destinations match the regular 

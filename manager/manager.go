@@ -35,7 +35,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
-// Manager is in charge of fanning out events to its respective dispatcher.
+// Manager is in charge of fanning out events to its respective dispatcher (HTTP or Sqs).
 // It keeps track of all recent Filterers and Dispatchers part of its map and is
 // responsible for updating or removing them.
 type Manager struct {
@@ -76,7 +76,7 @@ type Filterer interface {
 	Stop(context.Context) error
 }
 
-// NewEventParser constructs a Manager from the provided configs.
+// NewManager constructs a Manager from the provided configs.
 func NewManager(sc dispatch.SenderConfig, transport http.RoundTripper, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
 	sender := &http.Client{
 		Transport: transport,

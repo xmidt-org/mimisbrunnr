@@ -41,8 +41,8 @@ import (
 )
 
 const (
-	MinMaxWorkers       = 5
-	DefaultMinQueueSize = 5
+	minMaxWorkers       = 5
+	defaultMinQueueSize = 5
 	reasonLabel         = "reason"
 	queueFullReason     = "queue_full"
 )
@@ -74,11 +74,11 @@ type Response struct {
 
 // NewEventParser validates and constructs an EventParser from provided the configs.
 func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, measures Measures) (*EventParser, error) {
-	if o.MaxWorkers < MinMaxWorkers {
-		o.MaxWorkers = MinMaxWorkers
+	if o.MaxWorkers < minMaxWorkers {
+		o.MaxWorkers = minMaxWorkers
 	}
-	if o.QueueSize < DefaultMinQueueSize {
-		o.QueueSize = DefaultMinQueueSize
+	if o.QueueSize < defaultMinQueueSize {
+		o.QueueSize = defaultMinQueueSize
 	}
 	workers := semaphore.New(o.MaxWorkers)
 
@@ -155,7 +155,8 @@ func NewEventsEndpointEncode() kithttp.EncodeResponseFunc {
 	}
 }
 
-// Start creates the queue and begins to pull messages from it to parse.
+// Start creates the parser queue and begins a new goroutine
+// to pull messages from and parse the deviceID from the event.
 func (p *EventParser) Start() func(context.Context) error {
 
 	return func(ctx context.Context) error {
@@ -189,7 +190,8 @@ func (p *EventParser) parseEvents() {
 }
 
 // parseDeviceID uses the configured regex rules to parse the deviceID from the event
-// based on the event type.
+// based on the event type. Once the deviceID is parsed from the event, the manger is called
+// to send over the event to Filter.
 func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	var (
 		err      error
@@ -233,7 +235,7 @@ func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 
 }
 
-// Stop closes the parser queue.
+// Stop closes the parser queue and waits for all remaining goroutines to finish.
 func (p *EventParser) Stop() func(context.Context) error {
 	return func(ctx context.Context) error {
 		close(p.requestQueue.Load().(chan *wrp.Message))

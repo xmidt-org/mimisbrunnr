@@ -25,6 +25,7 @@ import (
 	"go.uber.org/fx"
 )
 
+// Dispatcher metrics
 const (
 	EventQueueDepth               = "event_queue_depth"
 	DroppedQueueCount             = "dropped_queue_count"
@@ -41,6 +42,7 @@ const (
 	DroppedExpiredCounter         = "dropped_expired_count"
 )
 
+// ProvideMetrics returns the Measures relevant to dispatch package
 func ProvideMetrics() fx.Option {
 	return fx.Provide(
 		xmetrics.ProvideGauge(
@@ -118,6 +120,7 @@ func ProvideMetrics() fx.Option {
 	)
 }
 
+// Measures describes the defined metrics that will be used by dispatcher
 type Measures struct {
 	fx.In
 	EventQueueDepthGauge     metrics.Gauge   `name:"event_queue_depth"`
@@ -134,6 +137,7 @@ type Measures struct {
 	DroppedPanicCounter      metrics.Counter `name:"dropped_panic_count"`
 }
 
+// NewMeasures returns desired metrics
 func NewMeasures(p provider.Provider) *Measures {
 	return &Measures{
 		EventQueueDepthGauge:     p.NewGauge(EventQueueDepth),

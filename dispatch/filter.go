@@ -39,6 +39,7 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
+// Filter is used to implement the Filterer interface.
 type Filter struct {
 	norn         model.Norn
 	filterQueue  atomic.Value
@@ -48,7 +49,7 @@ type Filter struct {
 	dropUntil    time.Time
 	maxWorkers   int
 	workers      semaphore.Interface
-	failureMsg   FailureMessage
+	failureMsg   failureMessage
 	cutOffPeriod time.Duration
 	logger       log.Logger
 	sender       func(*http.Request) (*http.Response, error)
@@ -56,59 +57,78 @@ type Filter struct {
 	dispatcher   D
 }
 
-type FilterConfig struct {
-	QueueSize    int
-	SenderConfig SenderConfig
+// FilterSender contains config to contruct a Filter.
+type FilterSender struct {
+	QueueSize  int
+	NumWorkers int
 }
 
+// D is dispatcher interface that abstracts away the exact delivery mechanism (ie HTTP or SQS).
 type D interface {
+	// Start sets up any initial sessions or connections needed in order to send events.
 	Start(context.Context) error
+
+	// Send delivers the message.  Sending is done concurrently, so no error is returned.
 	Send(*wrp.Message)
+
+	// Update is called to make sure the dispatcher keeps up to date with the norn config.
 	Update(norn model.Norn)
 }
 
-type FailureMessage struct {
-	Text         string `json:"text"`
-	CutOffPeriod string `json:"cut_off_period"`
+type failureMessage struct {
+	Text string `json:"text"`
 }
 
 const (
 	defaultMinQueueSize = 5
-	minMaxWorkers       = 5
+	minWorkers          = 5
 )
 
 // failureText is human readable text for the failure message
-const FailureText = `Unfortunately, your endpoint is not able to keep up with the ` +
+const failureText = `Unfortunately, your endpoint is not able to keep up with the ` +
 	`traffic being sent to it.  Due to this circumstance, all notification traffic ` +
 	`is being cut off and dropped for a period of time.  Please increase your ` +
 	`capacity to handle notifications, or reduce the number of notifications ` +
 	`you have requested.`
 
-func NewFilter(fc FilterConfig, dispatcher D, norn model.Norn, sender *http.Client) (*Filter, error) {
+// NewFilter validates the config and creates a new Filter.
+func NewFilter(fs *FilterSender, dispatcher D, norn model.Norn, sender *http.Client, measures Measures) (*Filter, error) {
 	if norn.DeviceID == "" {
 		return nil, fmt.Errorf("invalid deviceID")
 	}
+
+	if fs.QueueSize < defaultMinQueueSize {
+		fs.QueueSize = defaultMinQueueSize
+	}
+
+	if fs.NumWorkers < minWorkers {
+		fs.NumWorkers = minWorkers
+	}
+
 	filter := Filter{
 		dispatcher: dispatcher,
-		failureMsg: FailureMessage{
-			Text:         FailureText,
-			CutOffPeriod: fc.SenderConfig.CutOffPeriod.String(),
+		failureMsg: failureMessage{
+			Text: failureText,
 		},
-		norn:   norn,
-		sender: (sender).Do,
+		norn:     norn,
+		measures: &measures,
+		sender:   (sender).Do,
 	}
-	filter.filterQueue.Store(make(chan *wrp.Message, fc.QueueSize))
+	filter.filterQueue.Store(make(chan *wrp.Message, fs.QueueSize))
 	return &filter, nil
 }
 
-func (f *Filter) Start(_ context.Context) error {
+// Start begins pulling events from the queue and calls sendEvents()
+// for it to be delivered by its dispatcher.
+func (f *Filter) Start(context.Context) error {
 	f.wg.Add(1)
 	go f.sendEvents()
 	return nil
 
 }
 
-func (f *Filter) Stop(_ context.Context) error {
+// Stop closes the queue and resets its metric.
+func (f *Filter) Stop(context.Context) error {
 	close(f.filterQueue.Load().(chan *wrp.Message))
 	f.mutex.Lock()
 	f.measures.EventQueueDepthGauge.Set(0.0)
@@ -117,6 +137,11 @@ func (f *Filter) Stop(_ context.Context) error {
 	return nil
 }
 
+// Filter decides if an event should be sent by checking if the
+// event's device ID matches the device ID of the norn.  If they match,
+// the event is queued to be dispatched.  If not, the event is dropped.
+// If the queue is full when queueing the event, the event is dropped, the
+// queue is emptied and the norn consumer is cut off.
 func (f *Filter) Filter(deviceID string, event *wrp.Message) {
 	if deviceID == f.norn.DeviceID {
 		select {
@@ -130,7 +155,9 @@ func (f *Filter) Filter(deviceID string, event *wrp.Message) {
 	}
 }
 
-// called if queue is filled
+// queueOverflow is called when the queue is full and can no longer enqueue
+// events. The norn is then cut off for a certain period of time and sends a
+// failure message to the provided failure URL for an HTTP event delivery mechanism.
 func (f *Filter) queueOverflow() {
 
 	f.mutex.Lock()
@@ -204,6 +231,8 @@ func (f *Filter) queueOverflow() {
 
 }
 
+// empty is called when the filter queue is full. All events currently in the
+// queue are dropped and its metrics are reset.
 func (f *Filter) empty(droppedCounter metrics.Counter) {
 	droppedMsgs := f.filterQueue.Load().(chan *wrp.Message)
 	f.filterQueue.Store(make(chan *wrp.Message, f.queueSize))
@@ -212,6 +241,8 @@ func (f *Filter) empty(droppedCounter metrics.Counter) {
 	return
 }
 
+// sendEvents pulls event from the queue and calls the dispatcher
+// for it to be delivered, if the norn has not yet expired.
 func (f *Filter) sendEvents() {
 Loop:
 	for {
@@ -258,6 +289,7 @@ Loop:
 
 }
 
+// Update will update the time a norn expires.
 func (f *Filter) Update(norn model.Norn) {
 	f.mutex.Lock()
 	if f.norn.ExpiresAt != norn.ExpiresAt {

@@ -26,9 +26,10 @@ import (
 	"go.uber.org/fx"
 )
 
+// RegistryIn is the set of dependencies for this package's components
 type RegistryIn struct {
 	fx.In
-	RegistryConfig RegistryConfig
+	NornRegistry NornRegistry
 }
 
 type Registry struct {
@@ -36,10 +37,10 @@ type Registry struct {
 	Logger    log.Logger
 }
 
-type RegistryConfig struct {
-	Logger      log.Logger
-	Listener    chrysom.ListenerFunc
-	ArgusConfig chrysom.ClientConfig
+type NornRegistry struct {
+	Logger   log.Logger
+	Listener chrysom.ListenerFunc
+	Argus    chrysom.ClientConfig
 }
 
 func jsonResponse(rw http.ResponseWriter, code int, msg string) {
@@ -48,17 +49,18 @@ func jsonResponse(rw http.ResponseWriter, code int, msg string) {
 	rw.Write([]byte(fmt.Sprintf(`{"message":"%s"}`, msg)))
 }
 
+// NewRegistry returns Registry with configured argus client and listener
 func NewRegistry(in RegistryIn) (*Registry, error) {
 
-	argus, err := chrysom.CreateClient(in.RegistryConfig.ArgusConfig, chrysom.WithLogger(in.RegistryConfig.Logger))
+	argus, err := chrysom.CreateClient(in.NornRegistry.Argus, chrysom.WithLogger(in.NornRegistry.Logger))
 	if err != nil {
 		return nil, err
 	}
-	if in.RegistryConfig.Listener != nil {
-		argus.SetListener(in.RegistryConfig.Listener)
+	if in.NornRegistry.Listener != nil {
+		argus.SetListener(in.NornRegistry.Listener)
 	}
 	return &Registry{
-		Logger:    in.RegistryConfig.Logger,
+		Logger:    in.NornRegistry.Logger,
 		HookStore: argus,
 	}, nil
 }

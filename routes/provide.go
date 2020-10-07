@@ -28,6 +28,7 @@ import (
 	"go.uber.org/fx"
 )
 
+// HandlerIn is the set of dependencies for this package's components
 type HandlerIn struct {
 	fx.In
 	Registry    *registry.Registry
@@ -35,6 +36,7 @@ type HandlerIn struct {
 	EventParser *eventParser.EventParser
 }
 
+// HandlerOut is the set of components emitted by this package
 type HandlerOut struct {
 	fx.Out
 
@@ -51,6 +53,7 @@ type HandlerOut struct {
 	EventsKeyHandler http.Handler `name:"eventHandler"`
 }
 
+// Provide is an uber/fx style provider for this package's components
 func Provide(in HandlerIn) HandlerOut {
 	return HandlerOut{
 		PostKeyHandler:   kithttp.NewServer(norn.NewPostEndpoint(in.Registry), norn.NewPostEndpointDecode(), norn.NewSetEndpointEncode()),

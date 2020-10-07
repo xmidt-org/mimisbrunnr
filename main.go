@@ -18,7 +18,9 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"os"
 	"runtime"
 	"time"
@@ -41,9 +43,12 @@ import (
 )
 
 const (
-	applicationName = "mimisbrunnr"
-	DefaultKeyID    = "current"
-	apiBase         = "api/v1"
+	applicationName  = "mimisbrunnr"
+	DefaultKeyID     = "current"
+	apiBase          = "api/v1"
+	minWorkers       = 100
+	minHeaderTimeout = 10 * time.Second
+	minQueueSize     = 100
 )
 
 var (
@@ -108,23 +113,36 @@ func main() {
 			xlog.Unmarshal("log"),
 			func(v *viper.Viper) (eventParser.ParserConfig, error) {
 				config := new(eventParser.ParserConfig)
-				err := v.UnmarshalKey("parserConfig", &config)
+				err := v.UnmarshalKey("parser", &config)
 				return *config, err
 			},
 			func(v *viper.Viper) (dispatch.SenderConfig, error) {
 				config := new(dispatch.SenderConfig)
-				err := v.UnmarshalKey("senderConfig", &config)
+				err := v.UnmarshalKey("sender", &config)
+				if config.MaxWorkers < 100 {
+					config.MaxWorkers = minWorkers
+				}
+				if config.ResponseHeaderTimeout < minHeaderTimeout {
+					config.ResponseHeaderTimeout = minHeaderTimeout
+				}
+				if config.FilterQueueSize < 100 {
+					config.FilterQueueSize = minQueueSize
+				}
 				return *config, err
 			},
-			func(v *viper.Viper) (dispatch.FilterConfig, error) {
-				config := new(dispatch.FilterConfig)
-				err := v.UnmarshalKey("filterConfig", &config)
-				return *config, err
+			func(dc dispatch.SenderConfig) http.RoundTripper {
+				var transport http.RoundTripper = &http.Transport{
+					TLSClientConfig:       &tls.Config{},
+					MaxIdleConnsPerHost:   dc.MaxWorkers,
+					ResponseHeaderTimeout: dc.ResponseHeaderTimeout,
+					IdleConnTimeout:       dc.IdleConnTimeout,
+				}
+				return transport
 			},
 			manager.Provide,
-			func(v *viper.Viper, m *manager.Manager) (registry.RegistryConfig, error) {
-				config := new(registry.RegistryConfig)
-				err := v.UnmarshalKey("registryConfig", &config)
+			func(v *viper.Viper, m *manager.Manager) (registry.NornRegistry, error) {
+				config := new(registry.NornRegistry)
+				err := v.UnmarshalKey("nornRegistry", &config)
 				config.Listener = m.Update
 				return *config, err
 			},

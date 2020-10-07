@@ -19,7 +19,6 @@ package manager
 
 import (
 	"context"
-	"crypto/tls"
 	"net/http"
 	"sync"
 
@@ -36,11 +35,14 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
+// Manager is in charge of fanning out events to its respective dispatcher (HTTP or Sqs).
+// It keeps track of all recent Filterers and Dispatchers part of its map and is
+// responsible for updating or removing them.
 type Manager struct {
 	idFilter         map[string]nornFilter
 	urlDispatcher    map[string]dispatch.D
-	dispatcherConfig dispatch.SenderConfig
-	filterConfig     dispatch.FilterConfig
+	dispatcherConfig *dispatch.DispatcherSender
+	filterConfig     *dispatch.FilterSender
 	logger           log.Logger
 	mutex            sync.RWMutex
 	measures         dispatch.Measures
@@ -55,43 +57,54 @@ type nornFilter struct {
 type endpointDispatcher struct {
 	endpoint   string
 	dispatcher dispatch.D
+	filter     Filterer
 }
 
+// Filterer is used to filter events by deviceID.
 type Filterer interface {
+	// Start begins pulling from the filter queue to deliver events.
 	Start(context.Context) error
+
+	// Filter checks if the event's deviceID matches deviceID of norn
+	// and queue it accordingly.
 	Filter(deviceID string, event *wrp.Message)
+
+	// Update will update the time a norn expires.
 	Update(norn model.Norn)
+
+	// Stop closes the filter queue and resets its metric.
 	Stop(context.Context) error
 }
 
-func NewManager(dc dispatch.SenderConfig, fc dispatch.FilterConfig, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
-	transport := NewTransport(dc)
+// NewManager constructs a Manager from the provided configs.
+func NewManager(sc dispatch.SenderConfig, transport http.RoundTripper, logger log.Logger, measures dispatch.Measures) (*Manager, error) {
 	sender := &http.Client{
 		Transport: transport,
 	}
 
 	return &Manager{
-		idFilter:         map[string]nornFilter{},
-		urlDispatcher:    map[string]dispatch.D{},
-		dispatcherConfig: dc,
-		filterConfig:     fc,
-		logger:           logger,
-		measures:         measures,
-		sender:           sender,
+		idFilter:      map[string]nornFilter{},
+		urlDispatcher: map[string]dispatch.D{},
+		dispatcherConfig: &dispatch.DispatcherSender{
+			DeliveryInterval: sc.DeliveryInterval,
+			DeliveryRetries:  sc.DeliveryRetries,
+		},
+		filterConfig: &dispatch.FilterSender{
+			QueueSize:  sc.FilterQueueSize,
+			NumWorkers: sc.MaxWorkers,
+		},
+		logger:   logger,
+		measures: measures,
+		sender:   sender,
 	}, nil
 }
 
-func NewTransport(dc dispatch.SenderConfig) http.RoundTripper {
-	var transport http.RoundTripper = &http.Transport{
-		TLSClientConfig:       &tls.Config{},
-		MaxIdleConnsPerHost:   dc.NumWorkersPerSender,
-		ResponseHeaderTimeout: dc.ResponseHeaderTimeout,
-		IdleConnTimeout:       dc.IdleConnTimeout,
-	}
-	return transport
-}
-
-// chrysom client listener
+// Update is the argus chrysom client listener. For every recent item that is provided
+// by argus, Update will check if the dispatcher and filter for an item already exists
+// as part of the manager's local cache (idFilter and urlDispatcher maps) and update cache
+// with the recent norn retrieved from item. If the norn is brand new, a new dispatcher and
+// filter is created for it and added to local cache. Any old dispatchers and filters is also
+// removed part of Update.
 func (m *Manager) Update(items []argus.Item) {
 	recentIDMap := make(map[string]model.Norn)
 	recentURLMap := make(map[string]model.Norn)
@@ -123,7 +136,7 @@ func (m *Manager) Update(items []argus.Item) {
 			recentURLMap[url] = norn
 		} else {
 			if (norn.Destination.AWSConfig) == (model.AWSConfig{}) {
-				dispatcher, err = dispatch.NewHttpDispatcher(m.dispatcherConfig, norn.Destination.HttpConfig, m.sender, m.logger, m.measures)
+				dispatcher, err = dispatch.NewHTTPDispatcher(m.dispatcherConfig, norn.Destination.HttpConfig, m.sender, m.logger, m.measures)
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
@@ -146,7 +159,7 @@ func (m *Manager) Update(items []argus.Item) {
 		if _, ok := m.idFilter[id]; ok {
 			recentIDMap[id] = norn
 		} else {
-			filter, err = dispatch.NewFilter(m.filterConfig, dispatcher, norn, m.sender)
+			filter, err = dispatch.NewFilter(m.filterConfig, dispatcher, norn, m.sender, m.measures)
 			if err != nil {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			} else {
@@ -197,6 +210,8 @@ func (m *Manager) Update(items []argus.Item) {
 
 }
 
+// Send will send the message to Filter for it to be checked if norn's deviceID
+// matches the event's.
 func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.RLock()
 	for _, fd := range m.idFilter {
@@ -205,6 +220,7 @@ func (m *Manager) Send(deviceID string, event *wrp.Message) {
 	m.mutex.Unlock()
 }
 
+// NewGetEndpoint returns the endpoint for /norns/{id} handler.
 func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -223,6 +239,7 @@ func NewGetEndpoint(m *Manager) endpoint.Endpoint {
 
 }
 
+// NewGetEndpointDecode returns DecodeRequestFunc wrapper from the /norns/{id} endpoint.
 func NewGetEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		nornID := mux.Vars(req)

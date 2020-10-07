@@ -40,15 +40,23 @@ import (
 	"github.com/xmidt-org/wrp-go/v2"
 )
 
+// SenderConfig contains config to construct HTTPDispatcher, Transport, and Filter.
 type SenderConfig struct {
-	NumWorkersPerSender   int
+	MaxWorkers            int
 	ResponseHeaderTimeout time.Duration
 	IdleConnTimeout       time.Duration
-	CutOffPeriod          time.Duration
 	DeliveryInterval      time.Duration
 	DeliveryRetries       int
+	FilterQueueSize       int
 }
 
+// DispatcherSender contains config to construct a HTTPDispatcher.
+type DispatcherSender struct {
+	DeliveryInterval time.Duration
+	DeliveryRetries  int
+}
+
+// HTTPDispatcher implements the dispatcher interface to send events through http.
 type HTTPDispatcher struct {
 	measures         Measures
 	logger           log.Logger
@@ -59,7 +67,8 @@ type HTTPDispatcher struct {
 	httpConfig       model.HttpConfig
 }
 
-func NewHttpDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
+// NewHTTPDispatcher creates http dispatcher used to implement dispatcher interface.
+func NewHTTPDispatcher(ds *DispatcherSender, httpConfig model.HttpConfig, sender *http.Client, logger log.Logger, measures Measures) (*HTTPDispatcher, error) {
 
 	_, err := url.ParseRequestURI(httpConfig.URL)
 	if err != nil {
@@ -67,32 +76,33 @@ func NewHttpDispatcher(dc SenderConfig, httpConfig model.HttpConfig, sender *htt
 		return nil, err
 	}
 
-	if dc.DeliveryRetries > 10 {
-		dc.DeliveryRetries = 10
+	if ds.DeliveryRetries > 10 {
+		ds.DeliveryRetries = 10
 	}
 
-	if dc.DeliveryInterval > 1*time.Hour {
-		dc.DeliveryInterval = 1 * time.Hour
+	if ds.DeliveryInterval > 1*time.Hour {
+		ds.DeliveryInterval = 1 * time.Hour
 	}
 
 	dispatcher := HTTPDispatcher{
 		httpConfig:       httpConfig,
 		sender:           (sender).Do,
 		logger:           logger,
-		deliveryRetries:  dc.DeliveryRetries,
-		deliveryInterval: dc.DeliveryInterval,
+		deliveryRetries:  ds.DeliveryRetries,
+		deliveryInterval: ds.DeliveryInterval,
 		measures:         measures,
 	}
 
 	return &dispatcher, nil
 }
 
-func (h *HTTPDispatcher) Start(_ context.Context) error {
+func (h *HTTPDispatcher) Start(context.Context) error {
 	return nil
-
 }
 
-// called to deliver event
+// Send uses the configured HTTP client to send a WRP message
+// as a JSON.  The request also includes a signature created from
+// hashing the norn secret against the wrp message.
 func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 	url := h.httpConfig.URL
 	defer func() {
@@ -169,6 +179,7 @@ func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 
 }
 
+// Update updates secret for http dispatcher for a norn.
 func (h *HTTPDispatcher) Update(norn model.Norn) {
 
 	h.mutex.Lock()

@@ -26,11 +26,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"emperror.dev/emperror"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	kithttp "github.com/go-kit/kit/transport/http"
 	db "github.com/xmidt-org/codex-db"
 	"github.com/xmidt-org/mimisbrunnr/norn"
@@ -41,15 +41,16 @@ import (
 )
 
 const (
-	DefaultTTL          = time.Duration(5) * time.Minute
-	MinMaxWorkers       = 5
-	DefaultMinQueueSize = 5
+	minMaxWorkers       = 5
+	defaultMinQueueSize = 5
 	reasonLabel         = "reason"
 	queueFullReason     = "queue_full"
 )
 
+// EventSenderFunc is the function type used pass events to manager.
 type EventSenderFunc func(deviceID string, event *wrp.Message)
 
+// ParserConfig is the config provided to create a new EventParser.
 type ParserConfig struct {
 	QueueSize  int
 	MaxWorkers int
@@ -71,12 +72,13 @@ type Response struct {
 	response int
 }
 
+// NewEventParser validates and constructs an EventParser from provided the configs.
 func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, measures Measures) (*EventParser, error) {
-	if o.MaxWorkers < MinMaxWorkers {
-		o.MaxWorkers = MinMaxWorkers
+	if o.MaxWorkers < minMaxWorkers {
+		o.MaxWorkers = minMaxWorkers
 	}
-	if o.QueueSize < DefaultMinQueueSize {
-		o.QueueSize = DefaultMinQueueSize
+	if o.QueueSize < defaultMinQueueSize {
+		o.QueueSize = defaultMinQueueSize
 	}
 	workers := semaphore.New(o.MaxWorkers)
 
@@ -99,6 +101,7 @@ func NewEventParser(sender EventSenderFunc, logger *log.Logger, o ParserConfig, 
 	return &eventParser, nil
 }
 
+// NewEventsEndpoint returns the endpoint for /events handler.
 func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		var (
@@ -124,6 +127,7 @@ func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 	}
 }
 
+// NewEventsEndpointDecode returns DecodeRequestFunc wrapper from the /events endpoint.
 func NewEventsEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		var message *wrp.Message
@@ -141,6 +145,7 @@ func NewEventsEndpointDecode() kithttp.DecodeRequestFunc {
 	}
 }
 
+// NewEventsEndpointEncode returns EncodeResponseFunc wrapper from the /events endpoint.
 func NewEventsEndpointEncode() kithttp.EncodeResponseFunc {
 	return func(ctx context.Context, resp http.ResponseWriter, value interface{}) error {
 		if value != nil {
@@ -150,6 +155,8 @@ func NewEventsEndpointEncode() kithttp.EncodeResponseFunc {
 	}
 }
 
+// Start creates the parser queue and begins a new goroutine
+// to pull messages from and parse the deviceID from the event.
 func (p *EventParser) Start() func(context.Context) error {
 
 	return func(ctx context.Context) error {
@@ -170,11 +177,11 @@ func (p *EventParser) parseEvents() {
 	select {
 	case message = <-queue:
 		p.measures.EventParsingQueue.Add(-1.0)
-		// if p.measures != nil {
-		// 	p.measures.EventParsingQueue.Add(-1.0)
-		// }
 		p.parseWorkers.Acquire()
-		go p.parseDeviceID(message)
+		err := p.parseDeviceID(message)
+		if err != nil {
+			p.logger.Log(level.Key(), level.InfoValue, logging.MessageKey(), "Failed to parse ID")
+		}
 	}
 
 	for i := 0; i < p.opt.MaxWorkers; i++ {
@@ -182,6 +189,9 @@ func (p *EventParser) parseEvents() {
 	}
 }
 
+// parseDeviceID uses the configured regex rules to parse the deviceID from the event
+// based on the event type. Once the deviceID is parsed from the event, the manger is called
+// to send over the event to Filter.
 func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	var (
 		err      error
@@ -206,11 +216,11 @@ func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	if eventType == db.State {
 		// get state and id from dest if this is a state event
 		base, _ := path.Split(message.Destination)
-		base, deviceId := path.Split(path.Base(base))
-		if deviceId == "" {
+		base, id := path.Split(path.Base(base))
+		if id == "" {
 			return err
 		}
-		deviceID = strings.ToLower(deviceId)
+		deviceID = strings.ToLower(id)
 	} else {
 		if message.Source == "" {
 			return err
@@ -225,6 +235,7 @@ func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 
 }
 
+// Stop closes the parser queue and waits for all remaining goroutines to finish.
 func (p *EventParser) Stop() func(context.Context) error {
 	return func(ctx context.Context) error {
 		close(p.requestQueue.Load().(chan *wrp.Message))

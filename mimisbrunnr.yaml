@@ -1,7 +1,6 @@
 ---
-
-# The unique fully-qualified-domain-name of the server.  It is provided to 
-# the X-Mimisbrunnr-Server header for showing what server fulfilled the request 
+# The unique fully-qualified-domain-name of the server.  It is provided to
+# the X-Mimisbrunnr-Server header for showing what server fulfilled the request
 # sent.
 # (Optional)
 server: "mimisbrunnr-instance-123.example.com"
@@ -27,7 +26,6 @@ region:
 # is arbitrary and optional.
 # (Optional)
 flavor:
-
 
 servers:
   primary:
@@ -72,7 +70,7 @@ prometheus:
 #   # ":443" is ideal, but may require some special handling due to it being
 #   # a reserved (by the kernel) port.
 #   address: ":5000"
-#   # HTTPS/TLS 
+#   # HTTPS/TLS
 #   #
 #   # certificateFile provides the public key and CA chain in PEM format if
 #   # TLS is used.  Note: the certificate needs to match the fqdn for clients
@@ -95,7 +93,7 @@ health:
   # ":80" is ideal, but may require some special handling due to it being
   # a reserved (by the kernel) port.
   port: ":5001"
-  # endpoint provides the endpoint that will provide the health check 
+  # endpoint provides the endpoint that will provide the health check
   # information.
   endpoint: "/health"
 
@@ -173,7 +171,6 @@ log:
   # (Optional) defaults to false
   json: true
 
-
 # ########################################
 # #   Authorization Related Configuration
 # ########################################
@@ -186,7 +183,7 @@ log:
 #   # used as authorization
 #   # (Optional)
 #   jwtValidators:
-#     - 
+#     -
 #       keys:
 #         factory:
 #           uri: "https://jwt.example.com/keys/{keyId}"
@@ -198,19 +195,15 @@ log:
 #   # (Optional)
 #   authHeader: ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=","dXNlcjpwYXNz"]
 
-
-
 ########################################
 #   Norn Registry Related Configuration
 ########################################
 
 # nornRegistry provides configuration for storing and retrieving norns from argus.
-nornRegistry: 
-  
+nornRegistry:
   # argus contains the required configuration that is need to store and retrieve norns.
   # argus documentation: https://github.com/xmidt-org/argus#details
   argus:
-
     # bucket is used to store and retrieve norns.
     # (Required)
     bucket: "norns-mimisbrunnr"
@@ -226,11 +219,10 @@ nornRegistry:
     # auth is the authentication method for argus.
     # (Required)
     auth:
-
       # basic configures basic authentication for argus
       # Must be of form: 'Basic xyz=='
       basic: "Basic dXNlcjpwYXNz"
-      
+
 #
 #      # jwt configures jwt style authentication for argus.
 #      JWT:
@@ -249,8 +241,6 @@ nornRegistry:
 #        # buffer is the length of time before a token expires to get a new token.
 #        buffer: "2m"
 
-
-
 ########################################
 #   Dispatcher Related Configuration
 ########################################
@@ -258,7 +248,6 @@ nornRegistry:
 # sender provides details to set up each "sender" that is required for for dispatcher
 # to deliver events.
 sender:
-
   # numWorkersPerSender defines the maximum number of outgoing concurrent
   # HTTP client requests to a particular webhook url.  This number is for
   # THIS server only, to determine the total maximum, multiply this value
@@ -271,7 +260,7 @@ sender:
   # (Optional) default to a minimum of 10s
   responseHeaderTimeout: 10s
 
-  # idleConnTimeout is the amount of time a connection will remain idle 
+  # idleConnTimeout is the amount of time a connection will remain idle
   # before closing itself.
   # Zero means no limit
   # (Required)
@@ -287,47 +276,163 @@ sender:
   # (Required) max retries is set to 10
   deliveryRetries: 1
 
-  # queueSize provides the max number of event that can be stored on the 
-  # queue. Once events are taken off the queue, they will sent to dispatcher for 
+  # queueSize provides the max number of event that can be stored on the
+  # queue. Once events are taken off the queue, they will sent to dispatcher for
   # delivery.
   # (Optional) defaults to 100
   filterQueueSize: 500
-
-
 
 ########################################
 #   Event Parser Related Configuration
 ########################################
 
-# requestParser provides the information needed for starting the parser, which 
+# requestParser provides the information needed for starting the parser, which
 # parses the deviceID from events.
 parser:
-
-  # queueSize provides the maximum number of events that can be added to the 
-  # queue. Once events are taken off the queue, the deviceID is parsed from the event.  
+  # queueSize provides the maximum number of events that can be added to the
+  # queue. Once events are taken off the queue, the deviceID is parsed from the event.
   # (Optional) defaults to a minimum value 5
   queueSize: 100
 
-  # maxWorkers provides the maximum number of workers parsing events at a 
+  # maxWorkers provides the maximum number of workers parsing events at a
   # time.
   # (Optional) defaults to a minimum value 5
   maxWorkers: 100
 
-  # regexRules provides rules for events whose destinations match the regular 
-  # expression. Mimisbrunnr uses the first rule whose regex matches an event's destination. 
-  # If the event matches the regex of a rule, Mimisbrunnr gets instructions on 
+  # regexRules provides rules for events whose destinations match the regular
+  # expression. Mimisbrunnr uses the first rule whose regex matches an event's destination.
+  # If the event matches the regex of a rule, Mimisbrunnr gets instructions on
   # how to parse the deviceID based on the type of event (eventType).
-  # The eventType indicates where to find the device id in the event. If the 
+  # The eventType indicates where to find the device id in the event. If the
   # event type is "State", the device id is parsed out of the event Destination.
   # Otherwise, the event Source is used as the device id.
-  # eventType options: "State", "Default" 
+  # eventType options: "State", "Default"
   regexRules:
-      - regex: ".*/online$"
-        storePayload: true
-        ruleTTL: 30s
-        eventType: "State"
-      - regex: ".*/offline$"
-        storePayload: true
-        ruleTTL: 30s
-        eventType: "State"
+    - regex: ".*/online$"
+      storePayload: true
+      ruleTTL: 30s
+      eventType: "State"
+    - regex: ".*/offline$"
+      storePayload: true
+      ruleTTL: 30s
+      eventType: "State"
 
+########################################
+#   Authorization Related Configuration
+########################################
+
+# secret contains information for finding the secret on incoming requests.  If
+# both header and webhook secret are empty, no authentication is done on
+# incoming requests to Svalinn.  Otherwise, the value at the header provided
+# should hold a sha1 hash of the request body.  It should be in the format:
+#
+# Sha1<delimiter><hash>
+#
+# (Optional)
+# secret:
+#   # header provides the header key where the hash is expected.
+#   # (Optional)
+#   header: "X-Webpa-Signature"
+
+#   # delimiter provides the string that is expected between "Sha1" and the hash.
+#   # (Optional)
+#   delimiter: "="
+
+########################################
+#   Webhook Registration Related Configuration
+########################################
+
+# webhook provides the information needed to register to a webhook.  If the
+# urls and event regex aren't empty and the interval is greater than 0,
+# registration occurs.
+# (Optional)
+webhook:
+  # registrationInterval provides the time to wait between each registration to
+  # the webhook.  If this is set to 0, no registration is done.
+  # (Optional)
+  registrationInterval: "30s"
+
+  # timeout provides the length of time the request should wait before timing
+  # out.
+  timeout: "1m"
+
+  # registrationURL provides the place to register the webhook.
+  registrationURL: "http://caduceus:6000/hook"
+
+  # request provides the information passed in the webhook registration request.
+  request:
+    # config provides configuration values for the requests to the webhook
+    # receiver.
+    config:
+      # url provides the server the webhook should send the events to.  If this
+      # value isn't set, no registration happens.
+      url: "http://host.docker.internal:8181/api/v1/device-status"
+
+      # contentType provides the content type Svalinn expects from the requests
+      # it receives.
+      # (Optional) defaults to "wrp"
+      #contentType: "wrp"
+
+      # secret provides the key for hashing the messages the webhook sends.
+      # If this is empty, no authentication is done later for incoming requests
+      # to Svalinn.
+      # (Optional)
+      # secret: "super secret"
+
+      # maxRetryCount is the number of times to retry on a failure.
+      # (Optional)
+      maxRetryCount: 3
+
+      # alternativeURLs provides endpoints to round robin through on a failure
+      # to send an event.  This is only used if the maxRetryCount is greater
+      # than 0.
+      # (Optional)
+      #AlternativeURLs: []
+
+    # events provides a list of regular expressions that tells the webhook
+    # which endpoints to send to Svalinn.  If the destination of an event
+    # matches a regular expression in this list, it is sent to Svalinn
+    events: ["device-status.*"]
+
+    # matcher provides regular expressions to match against the event source.
+    # (Optional) default is [".*"]
+    # matcher:
+    #   deviceID: [".*"]
+
+  # the below configuration values provide a way to add an Authorization header
+  # to the request to the webhook.  If both basic and sat contain empty values,
+  # no header is sent.  sat takes priority over basic if both are set.
+
+  # basic provides a way to use Basic Authorization when registering to a
+  # webhook.  If this value is provided and sat isn't, the following header is
+  # added to the registration request:
+  #
+  # Authorization Basic {basic}
+  #
+  # (Optional)
+  basic: ""
+
+  # jwt provides a way to use Bearer Authorization when registering to a
+  # webhook.  If the below values are all provided, a request is made to the
+  # URL to get the token to be used in the registration request.  The
+  # header would look like:
+  #
+  # Authorization Bearer {token}
+  #
+  # (Optional)
+  jwt:
+    # requestHeaders are added to the request for the token.
+    # (Optional)
+    # requestHeaders:
+    #   "": ""
+
+    # authURL is the URL to access for the token.
+    authURL: ""
+
+    # timeout is how long the request to get the token will take before
+    # timing out.
+    timeout: "1m"
+
+    # buffer is the length of time before a token expires to get a new token.
+    # (Optional)
+    buffer: "5s"

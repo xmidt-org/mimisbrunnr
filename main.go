@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/InVisionApp/go-health"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/metrics/provider"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -39,6 +41,8 @@ import (
 	"github.com/xmidt-org/themis/xhttp/xhttpserver"
 	"github.com/xmidt-org/themis/xlog"
 	"github.com/xmidt-org/themis/xmetrics/xmetricshttp"
+	secretGetter "github.com/xmidt-org/wrp-listener/secret"
+	"github.com/xmidt-org/wrp-listener/webhookClient"
 	"go.uber.org/fx"
 )
 
@@ -56,6 +60,11 @@ var (
 	Version   = "undefined"
 	BuildTime = "undefined"
 )
+
+type SecretConfig struct {
+	Header    string
+	Delimiter string
+}
 
 func setupFlagSet(fs *pflag.FlagSet) error {
 	fs.StringP("file", "f", "", "the configuration file to use.  Overrides the search path.")
@@ -158,6 +167,31 @@ func main() {
 			xhttpserver.Unmarshal{Key: "servers.primary", Optional: true}.Annotated(),
 			xhttpserver.Unmarshal{Key: "servers.metrics", Optional: true}.Annotated(),
 			xhttpserver.Unmarshal{Key: "servers.health", Optional: true}.Annotated(),
+			func(v *viper.Viper) (WebhookConfig, error) {
+				whConfig := new(WebhookConfig)
+				err := v.UnmarshalKey("webhook", &whConfig)
+				return *whConfig, err
+			},
+			func(v *viper.Viper) (SecretConfig, error) {
+				secretConfig := new(SecretConfig)
+				err := v.UnmarshalKey("secret", &secretConfig)
+				return *secretConfig, err
+			},
+			func(config WebhookConfig) webhookClient.SecretGetter {
+				return secretGetter.NewConstantSecret(config.Request.Config.Secret)
+			},
+			func(config WebhookConfig) webhookClient.BasicConfig {
+				return webhookClient.BasicConfig{
+					Timeout:         config.Timeout,
+					RegistrationURL: config.RegistrationURL,
+					Request:         config.Request,
+				}
+			},
+			determineTokenAcquirer,
+			webhookClient.NewBasicRegisterer,
+			func(l fx.Lifecycle, r *webhookClient.BasicRegisterer, c WebhookConfig, logger log.Logger) (*webhookClient.PeriodicRegisterer, error) {
+				return webhookClient.NewPeriodicRegisterer(r, c.RegistrationInterval, logger, provider.NewDiscardProvider())
+			},
 		),
 		fx.Invoke(
 			xhealth.ApplyChecks(
@@ -174,6 +208,9 @@ func main() {
 			routes.BuildPrimaryRoutes,
 			routes.BuildMetricsRoutes,
 			routes.BuildHealthRoutes,
+			func(pr *webhookClient.PeriodicRegisterer) {
+				pr.Start()
+			},
 		),
 	)
 	switch err := app.Err(); err {

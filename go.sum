@@ -535,6 +535,8 @@ github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q
 github.com/xmidt-org/argus v0.3.3 h1:Tb3ORrpJgy3rlRZMS4r9Do/jwLQdpQf5gRDaY28TxGI=
 github.com/xmidt-org/argus v0.3.3/go.mod h1:msivo9vrE9z5xVh8/ahJ6v/DGMIvR1DDq0+jEGTa1TA=
 github.com/xmidt-org/arrange v0.1.9/go.mod h1:PRA8iEZ11L93NsEkDP56x1mZyfDcWxzDULgHj56TaEk=
+github.com/xmidt-org/arrange v0.2.1 h1:3jC+B8AO8p2h4lXBlQj49J+BGRXaCcxuB4/n2Ku5Mbc=
+github.com/xmidt-org/arrange v0.2.1/go.mod h1:2nSM+HlyHTp377Uu4yMh44RsSfwBE2ufJSEhVAFtbdg=
 github.com/xmidt-org/bascule v0.3.1/go.mod h1:fx2JeJAwEoepVcE3Fgd6JQSBvUAccyuFDzMmct1eWYw=
 github.com/xmidt-org/bascule v0.5.0/go.mod h1:D2DuXSMa5+OpveCtaSWp0+/tmnxZqfYhkCC1oCzLZdI=
 github.com/xmidt-org/bascule v0.8.0 h1:xk/c8zqqNjoSW4b4oSrUwemm786Bs5DabmX7AgUgNPw=
@@ -548,6 +550,7 @@ github.com/xmidt-org/codex-db v0.6.0 h1:4SmFE1M7tDnTrkCyVj93n6IN0qRfQYmpexqxa3XO
 github.com/xmidt-org/codex-db v0.6.0/go.mod h1:6CvN42JLUzKqK9uZQMSWAaKf++BFt/ae6FOHkIlfXqQ=
 github.com/xmidt-org/codex-db v0.7.0 h1:lV5RovmrqtUQsyp3PcG8hdWK3XoYNVMiV07Qw3as1x4=
 github.com/xmidt-org/codex-db v0.7.0/go.mod h1:6CvN42JLUzKqK9uZQMSWAaKf++BFt/ae6FOHkIlfXqQ=
+github.com/xmidt-org/httpaux v0.1.0/go.mod h1:qZnH2uObGPwHnOz8HcPNlbcd3gKEvdmxbIK3rgbQhto=
 github.com/xmidt-org/svalinn v0.14.1 h1:AVl22tgcrquuvvW+QNQ1nCsFkbFhOEECMJ+gn9LGLqY=
 github.com/xmidt-org/svalinn v0.14.1/go.mod h1:iINpGbAV83PnxGf4fI/k7sIIjo1KfjovpgXdnBRAWMk=
 github.com/xmidt-org/themis v0.4.4 h1:KewitRxStW1xOehDBi0YyGZyRv3PjFdYUEDvQFf1Nmk=

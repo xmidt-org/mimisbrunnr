@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"github.com/xmidt-org/mimisbrunnr/manager"
@@ -74,29 +75,28 @@ func setupFlagSet(fs *pflag.FlagSet) error {
 	return nil
 }
 
-func setupViper(in config.ViperIn, v *viper.Viper) (err error) {
-	if printVersion, _ := in.FlagSet.GetBool("version"); printVersion {
+func setupViper(v *viper.Viper, fs *pflag.FlagSet, name string) (err error) {
+	if printVersion, _ := fs.GetBool("version"); printVersion {
 		printVersionInfo()
 	}
-	if file, _ := in.FlagSet.GetString("file"); len(file) > 0 {
+
+	if file, _ := fs.GetString("file"); len(file) > 0 {
 		v.SetConfigFile(file)
 		err = v.ReadInConfig()
 	} else {
-		v.SetConfigName(string(in.Name))
-		v.AddConfigPath(fmt.Sprintf("/etc/%s", in.Name))
-		v.AddConfigPath(fmt.Sprintf("$HOME/.%s", in.Name))
+		v.SetConfigName(string(name))
+		v.AddConfigPath(fmt.Sprintf("/etc/%s", name))
+		v.AddConfigPath(fmt.Sprintf("$HOME/.%s", name))
 		v.AddConfigPath(".")
 		err = v.ReadInConfig()
 	}
-
 	if err != nil {
-		return err
+		return
 	}
 
-	if debug, _ := in.FlagSet.GetBool("debug"); debug {
+	if debug, _ := fs.GetBool("debug"); debug {
 		v.Set("log.level", "DEBUG")
 	}
-
 	return nil
 }
 
@@ -111,20 +111,28 @@ func printVersionInfo() {
 }
 
 func main() {
+	// setup command line options and configuration from file
+	f := pflag.NewFlagSet(applicationName, pflag.ContinueOnError)
+	setupFlagSet(f)
+	v := viper.New()
+	err := setupViper(v, f, applicationName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	app := fx.New(
 		xlog.Logger(),
 		config.CommandLine{Name: applicationName}.Provide(setupFlagSet),
 		dispatch.ProvideMetrics(),
 		eventParser.ProvideMetrics(),
 		provideMetrics(),
+		arrange.ForViper(v),
+		fx.Supply(v),
 		fx.Provide(
-			config.ProvideViper(setupViper),
+			ProvideUnmarshaller,
 			xlog.Unmarshal("log"),
-			func(v *viper.Viper) (eventParser.ParserConfig, error) {
-				config := new(eventParser.ParserConfig)
-				err := v.UnmarshalKey("parser", &config)
-				return *config, err
-			},
+			arrange.UnmarshalKey("parser", eventParser.ParserConfig{}),
 			func(v *viper.Viper) (dispatch.SenderConfig, error) {
 				config := new(dispatch.SenderConfig)
 				err := v.UnmarshalKey("sender", &config)
@@ -167,16 +175,8 @@ func main() {
 			xhttpserver.Unmarshal{Key: "servers.primary", Optional: true}.Annotated(),
 			xhttpserver.Unmarshal{Key: "servers.metrics", Optional: true}.Annotated(),
 			xhttpserver.Unmarshal{Key: "servers.health", Optional: true}.Annotated(),
-			func(v *viper.Viper) (WebhookConfig, error) {
-				whConfig := new(WebhookConfig)
-				err := v.UnmarshalKey("webhook", &whConfig)
-				return *whConfig, err
-			},
-			func(v *viper.Viper) (SecretConfig, error) {
-				secretConfig := new(SecretConfig)
-				err := v.UnmarshalKey("secret", &secretConfig)
-				return *secretConfig, err
-			},
+			arrange.UnmarshalKey("webhook", WebhookConfig{}),
+			arrange.UnmarshalKey("secret", SecretConfig{}),
 			func(config WebhookConfig) webhookClient.SecretGetter {
 				return secretGetter.NewConstantSecret(config.Request.Config.Secret)
 			},
@@ -209,6 +209,7 @@ func main() {
 			routes.BuildMetricsRoutes,
 			routes.BuildHealthRoutes,
 			func(pr *webhookClient.PeriodicRegisterer) {
+				fmt.Println("starting")
 				pr.Start()
 			},
 		),
@@ -219,7 +220,20 @@ func main() {
 	case nil:
 		app.Run()
 	default:
+		fmt.Println(err)
 		os.Exit(2)
 	}
 
+}
+
+// TODO: once we get rid of any packages that need an unmarshaller, remove this.
+type UnmarshallerOut struct {
+	fx.Out
+	Unmarshaller config.Unmarshaller
+}
+
+func ProvideUnmarshaller(v *viper.Viper) UnmarshallerOut {
+	return UnmarshallerOut{
+		Unmarshaller: config.ViperUnmarshaller{Viper: v, Options: []viper.DecoderConfigOption{}},
+	}
 }

@@ -26,9 +26,12 @@ import (
 	"time"
 
 	"github.com/InVisionApp/go-health"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/metrics/provider"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"github.com/xmidt-org/arrange"
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/eventParser"
 	"github.com/xmidt-org/mimisbrunnr/manager"
@@ -39,6 +42,8 @@ import (
 	"github.com/xmidt-org/themis/xhttp/xhttpserver"
 	"github.com/xmidt-org/themis/xlog"
 	"github.com/xmidt-org/themis/xmetrics/xmetricshttp"
+	secretGetter "github.com/xmidt-org/wrp-listener/secret"
+	"github.com/xmidt-org/wrp-listener/webhookClient"
 	"go.uber.org/fx"
 )
 
@@ -57,6 +62,11 @@ var (
 	BuildTime = "undefined"
 )
 
+type SecretConfig struct {
+	Header    string
+	Delimiter string
+}
+
 func setupFlagSet(fs *pflag.FlagSet) error {
 	fs.StringP("file", "f", "", "the configuration file to use.  Overrides the search path.")
 	fs.BoolP("debug", "d", false, "enables debug logging.  Overrides configuration.")
@@ -65,29 +75,28 @@ func setupFlagSet(fs *pflag.FlagSet) error {
 	return nil
 }
 
-func setupViper(in config.ViperIn, v *viper.Viper) (err error) {
-	if printVersion, _ := in.FlagSet.GetBool("version"); printVersion {
+func setupViper(v *viper.Viper, fs *pflag.FlagSet, name string) (err error) {
+	if printVersion, _ := fs.GetBool("version"); printVersion {
 		printVersionInfo()
 	}
-	if file, _ := in.FlagSet.GetString("file"); len(file) > 0 {
+
+	if file, _ := fs.GetString("file"); len(file) > 0 {
 		v.SetConfigFile(file)
 		err = v.ReadInConfig()
 	} else {
-		v.SetConfigName(string(in.Name))
-		v.AddConfigPath(fmt.Sprintf("/etc/%s", in.Name))
-		v.AddConfigPath(fmt.Sprintf("$HOME/.%s", in.Name))
+		v.SetConfigName(string(name))
+		v.AddConfigPath(fmt.Sprintf("/etc/%s", name))
+		v.AddConfigPath(fmt.Sprintf("$HOME/.%s", name))
 		v.AddConfigPath(".")
 		err = v.ReadInConfig()
 	}
-
 	if err != nil {
-		return err
+		return
 	}
 
-	if debug, _ := in.FlagSet.GetBool("debug"); debug {
+	if debug, _ := fs.GetBool("debug"); debug {
 		v.Set("log.level", "DEBUG")
 	}
-
 	return nil
 }
 
@@ -102,20 +111,28 @@ func printVersionInfo() {
 }
 
 func main() {
+	// setup command line options and configuration from file
+	f := pflag.NewFlagSet(applicationName, pflag.ContinueOnError)
+	setupFlagSet(f)
+	v := viper.New()
+	err := setupViper(v, f, applicationName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	app := fx.New(
 		xlog.Logger(),
 		config.CommandLine{Name: applicationName}.Provide(setupFlagSet),
 		dispatch.ProvideMetrics(),
 		eventParser.ProvideMetrics(),
 		provideMetrics(),
+		arrange.ForViper(v),
+		fx.Supply(v),
 		fx.Provide(
-			config.ProvideViper(setupViper),
+			ProvideUnmarshaller,
 			xlog.Unmarshal("log"),
-			func(v *viper.Viper) (eventParser.ParserConfig, error) {
-				config := new(eventParser.ParserConfig)
-				err := v.UnmarshalKey("parser", &config)
-				return *config, err
-			},
+			arrange.UnmarshalKey("parser", eventParser.ParserConfig{}),
 			func(v *viper.Viper) (dispatch.SenderConfig, error) {
 				config := new(dispatch.SenderConfig)
 				err := v.UnmarshalKey("sender", &config)
@@ -158,6 +175,23 @@ func main() {
 			xhttpserver.Unmarshal{Key: "servers.primary", Optional: true}.Annotated(),
 			xhttpserver.Unmarshal{Key: "servers.metrics", Optional: true}.Annotated(),
 			xhttpserver.Unmarshal{Key: "servers.health", Optional: true}.Annotated(),
+			arrange.UnmarshalKey("webhook", WebhookConfig{}),
+			arrange.UnmarshalKey("secret", SecretConfig{}),
+			func(config WebhookConfig) webhookClient.SecretGetter {
+				return secretGetter.NewConstantSecret(config.Request.Config.Secret)
+			},
+			func(config WebhookConfig) webhookClient.BasicConfig {
+				return webhookClient.BasicConfig{
+					Timeout:         config.Timeout,
+					RegistrationURL: config.RegistrationURL,
+					Request:         config.Request,
+				}
+			},
+			determineTokenAcquirer,
+			webhookClient.NewBasicRegisterer,
+			func(l fx.Lifecycle, r *webhookClient.BasicRegisterer, c WebhookConfig, logger log.Logger) (*webhookClient.PeriodicRegisterer, error) {
+				return webhookClient.NewPeriodicRegisterer(r, c.RegistrationInterval, logger, provider.NewDiscardProvider())
+			},
 		),
 		fx.Invoke(
 			xhealth.ApplyChecks(
@@ -174,6 +208,10 @@ func main() {
 			routes.BuildPrimaryRoutes,
 			routes.BuildMetricsRoutes,
 			routes.BuildHealthRoutes,
+			func(pr *webhookClient.PeriodicRegisterer) {
+				fmt.Println("starting")
+				pr.Start()
+			},
 		),
 	)
 	switch err := app.Err(); err {
@@ -182,7 +220,20 @@ func main() {
 	case nil:
 		app.Run()
 	default:
+		fmt.Println(err)
 		os.Exit(2)
 	}
 
+}
+
+// TODO: once we get rid of any packages that need an unmarshaller, remove this.
+type UnmarshallerOut struct {
+	fx.Out
+	Unmarshaller config.Unmarshaller
+}
+
+func ProvideUnmarshaller(v *viper.Viper) UnmarshallerOut {
+	return UnmarshallerOut{
+		Unmarshaller: config.ViperUnmarshaller{Viper: v, Options: []viper.DecoderConfigOption{}},
+	}
 }

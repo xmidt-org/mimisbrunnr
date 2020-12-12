@@ -2,10 +2,8 @@
 
 (Pronounced "mims-brun-er")
 
-[![Build Status](https://travis-ci.com/xmidt-org/mimisbrunnr.svg?branch=main)](https://travis-ci.com/xmidt-org/mimisbrunnr)
+[![Build Status](https://github.com/xmidt-org/mimisbrunnr/workflows/CI/badge.svg)](https://github.com/xmidt-org/mimisbrunnr/actions)
 [![codecov.io](http://codecov.io/github/xmidt-org/mimisbrunnr/coverage.svg?branch=main)](http://codecov.io/github/xmidt-org/mimisbrunnr?branch=main)
-[![Code Climate](https://codeclimate.com/github/xmidt-org/mimisbrunnr/badges/gpa.svg)](https://codeclimate.com/github/xmidt-org/mimisbrunnr)
-[![Issue Count](https://codeclimate.com/github/xmidt-org/mimisbrunnr/badges/issue_count.svg)](https://codeclimate.com/github/xmidt-org/mimisbrunnr)
 [![Go Report Card](https://goreportcard.com/badge/github.com/xmidt-org/mimisbrunnr)](https://goreportcard.com/report/github.com/xmidt-org/mimisbrunnr)
 [![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/xmidt-org/mimisbrunnr/blob/main/LICENSE)
 [![GitHub release](https://img.shields.io/github/release/xmidt-org/mimisbrunnr.svg)](CHANGELOG.md)

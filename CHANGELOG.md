@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - added mutex to prevent data races [#16](https://github.com/xmidt-org/mimisbrunnr/pull/16)
 - added documentation and enhancements [#20](https://github.com/xmidt-org/mimisbrunnr/pull/20)
 - Migrate to github actions, normalize analysis tools, Dockerfiles and Makefiles. [#27](https://github.com/xmidt-org/mimisbrunnr/pull/27)
+- Updated spec file and rpkg version macro to be able to choose when the 'v' is included in the version. [#31](https://github.com/xmidt-org/mimisbrunnr/pull/31)
 
 ## [v0.1.0]
 - Initial creation

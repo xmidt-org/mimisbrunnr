@@ -2,13 +2,13 @@
 
 (Pronounced "mims-brun-er")
 
-[![Build Status](https://github.com/xmidt-org/mimisbrunnr/workflows/CI/badge.svg)](https://github.com/xmidt-org/mimisbrunnr/actions)
+[![Build Status](https://github.com/xmidt-org/mimisbrunnr/actions/workflows/ci.yml/badge.svg)](https://github.com/xmidt-org/mimisbrunnr/actions/workflows/ci.yml)
+[![Dependency Updateer](https://github.com/xmidt-org/mimisbrunnr/actions/workflows/updater.yml/badge.svg)](https://github.com/xmidt-org/mimisbrunnr/actions/workflows/updater.yml)
 [![codecov.io](http://codecov.io/github/xmidt-org/mimisbrunnr/coverage.svg?branch=main)](http://codecov.io/github/xmidt-org/mimisbrunnr?branch=main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/xmidt-org/mimisbrunnr)](https://goreportcard.com/report/github.com/xmidt-org/mimisbrunnr)
-[![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/xmidt-org/mimisbrunnr/blob/main/LICENSE)
-[![GitHub release](https://img.shields.io/github/release/xmidt-org/mimisbrunnr.svg)](CHANGELOG.md)
-[![GoDoc](https://godoc.org/github.com/xmidt-org/mimisbrunnr?status.svg)](https://godoc.org/github.com/xmidt-org/mimisbrunnr)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=xmidt-org_mimisbrunnr&metric=alert_status)](https://sonarcloud.io/dashboard?id=xmidt-org_mimisbrunnr)
+[![Apache V2 License](http://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/xmidt-org/mimisbrunnr/blob/main/LICENSE)
+[![GitHub Release](https://img.shields.io/github/release/xmidt-org/mimisbrunnr.svg)](CHANGELOG.md)
 
 ## Summary
 

@@ -3,7 +3,7 @@ module github.com/xmidt-org/mimisbrunnr
 go 1.13
 
 require (
-	emperror.dev/emperror v0.30.0
+	emperror.dev/emperror v0.33.0
 	github.com/InVisionApp/go-health v2.1.0+incompatible
 	github.com/aws/aws-sdk-go v1.44.72
 	github.com/go-kit/kit v0.10.0

@@ -21,5 +21,5 @@ require (
 	github.com/xmidt-org/webpa-common v1.11.9
 	github.com/xmidt-org/wrp-go/v2 v2.0.1
 	github.com/xmidt-org/wrp-listener v0.2.4
-	go.uber.org/fx v1.17.1
+	go.uber.org/fx v1.18.1
 )

@@ -32,7 +32,7 @@ import (
 	argus "github.com/xmidt-org/argus/model"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/mimisbrunnr/registry"
-	"github.com/xmidt-org/webpa-common/logging"
+	"github.com/xmidt-org/webpa-common/v2/logging"
 )
 
 type BadRequestError struct {

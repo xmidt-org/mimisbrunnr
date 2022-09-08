@@ -37,7 +37,7 @@ import (
 	"github.com/xmidt-org/svalinn/rules"
 	"github.com/xmidt-org/webpa-common/logging"
 	semaphore "github.com/xmidt-org/webpa-common/semaphore"
-	"github.com/xmidt-org/wrp-go/v2"
+	"github.com/xmidt-org/wrp-go/v3"
 )
 
 const (

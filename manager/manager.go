@@ -31,8 +31,8 @@ import (
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/mimisbrunnr/norn"
-	"github.com/xmidt-org/webpa-common/logging"
-	"github.com/xmidt-org/wrp-go/v2"
+	"github.com/xmidt-org/webpa-common/v2/logging"
+	"github.com/xmidt-org/wrp-go/v3"
 )
 
 // Manager is in charge of fanning out events to its respective dispatcher (HTTP or Sqs).

@@ -57,7 +57,7 @@ type Filter struct {
 	dispatcher   D
 }
 
-// FilterSender contains config to contruct a Filter.
+// FilterSender contains config to construct a Filter.
 type FilterSender struct {
 	QueueSize  int
 	NumWorkers int

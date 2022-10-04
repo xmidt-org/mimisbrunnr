@@ -5,7 +5,7 @@ go 1.13
 require (
 	emperror.dev/emperror v0.33.0
 	github.com/InVisionApp/go-health v2.1.0+incompatible
-	github.com/aws/aws-sdk-go v1.44.82
+	github.com/aws/aws-sdk-go v1.44.110
 	github.com/go-kit/kit v0.12.0
 	github.com/gorilla/mux v1.8.0
 	github.com/justinas/alice v1.2.0

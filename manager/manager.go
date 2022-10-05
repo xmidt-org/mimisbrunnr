@@ -23,15 +23,15 @@ import (
 	"sync"
 
 	"github.com/go-kit/kit/endpoint"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	kithttp "github.com/go-kit/kit/transport/http"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	argus "github.com/xmidt-org/argus/model"
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/mimisbrunnr/norn"
-	"github.com/xmidt-org/webpa-common/v2/logging"
+	"github.com/xmidt-org/webpa-common/v2/logging" // nolint:staticcheck
 	"github.com/xmidt-org/wrp-go/v3"
 )
 
@@ -57,7 +57,7 @@ type nornFilter struct {
 type endpointDispatcher struct {
 	endpoint   string
 	dispatcher dispatch.D
-	filter     Filterer
+	filter     Filterer // nolint: unused
 }
 
 // Filterer is used to filter events by deviceID.
@@ -121,7 +121,7 @@ func (m *Manager) Update(items []argus.Item) {
 	)
 
 	for _, item := range items {
-		id := item.Identifier
+		id := item.ID
 		norn, err := model.ConvertItemToNorn(item)
 		if err != nil {
 			log.WithPrefix(m.logger, level.Key(), level.ErrorValue()).Log(logging.MessageKey(), "failed to convert Item to Norn", "item", item)
@@ -140,7 +140,7 @@ func (m *Manager) Update(items []argus.Item) {
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
-					dispatcher.Start(nil)
+					dispatcher.Start(context.TODO())
 					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
 					recentURLMap[url] = norn
 				}
@@ -149,7 +149,7 @@ func (m *Manager) Update(items []argus.Item) {
 				if err != nil {
 					m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 				} else {
-					dispatcher.Start(nil)
+					dispatcher.Start(context.TODO())
 					newDispatchers = append(newDispatchers, endpointDispatcher{endpoint: url, dispatcher: dispatcher})
 					recentURLMap[url] = norn
 				}
@@ -163,7 +163,7 @@ func (m *Manager) Update(items []argus.Item) {
 			if err != nil {
 				m.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), err.Error)
 			} else {
-				filter.Start(nil)
+				filter.Start(context.TODO())
 				newNorns = append(newNorns, nornFilter{norn: norn, filter: filter})
 				recentIDMap[id] = norn
 			}
@@ -183,7 +183,7 @@ func (m *Manager) Update(items []argus.Item) {
 
 	for i, dispatcher := range m.urlDispatcher {
 		if norn, ok := recentURLMap[i]; !ok {
-			oldDispatcherUrls = append(oldDispatcherUrls, dispatcher)
+			oldDispatcherUrls = append(oldDispatcherUrls, dispatcher) //nolint: staticcheck
 			m.mutex.Lock()
 			delete(m.urlDispatcher, i)
 			m.mutex.Unlock()
@@ -205,7 +205,7 @@ func (m *Manager) Update(items []argus.Item) {
 	}
 
 	for _, filter := range oldFilterNorns {
-		filter.Stop(nil)
+		filter.Stop(context.TODO())
 	}
 
 }

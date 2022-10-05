@@ -29,10 +29,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/xmidt-org/mimisbrunnr/model"
-	"github.com/xmidt-org/webpa-common/v2/logging"
+	"github.com/xmidt-org/webpa-common/v2/logging" //nolint: staticcheck
 	"github.com/xmidt-org/wrp-go/v3"
 )
 
@@ -139,7 +139,7 @@ func (s *SQSDispatcher) Send(msg *wrp.Message) {
 	}
 	_, err = s.sqsClient.SendMessage(sqsParams)
 	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
+		if awsErr, ok := err.(awserr.Error); ok { //nolint: errorlint
 			code = awsErr.Code()
 		}
 		s.measures.DroppedNetworkErrCounter.Add(1.0)
@@ -159,7 +159,7 @@ func (s *SQSDispatcher) Update(norn model.Norn) {
 	s.awsConfig = norn.Destination.AWSConfig
 	s.mutex.Unlock()
 
-	err := s.Start(nil)
+	err := s.Start(context.TODO())
 	if err != nil {
 		s.logger.Log(level.Key(), level.ErrorValue(), logging.MessageKey(), "Failed to send event to update aws session.", "error", err)
 		return

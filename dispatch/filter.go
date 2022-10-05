@@ -21,7 +21,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -30,12 +30,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/go-kit/kit/metrics"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/xmidt-org/mimisbrunnr/model"
-	"github.com/xmidt-org/webpa-common/v2/logging"
-	"github.com/xmidt-org/webpa-common/v2/semaphore"
+	"github.com/xmidt-org/webpa-common/v2/logging"   //nolint: staticcheck
+	"github.com/xmidt-org/webpa-common/v2/semaphore" //nolint: staticcheck
 	"github.com/xmidt-org/wrp-go/v3"
 )
 
@@ -214,7 +214,7 @@ func (f *Filter) queueOverflow() {
 
 	//  record content type, json.
 	f.measures.ContentTypeCounter.With("content_type", "json").Add(1.0)
-	resp, err := f.sender(req)
+	resp, err := f.sender(req) //nolint: bodyclose
 	if nil != err {
 		// Failure
 		errorLog.Log(logging.MessageKey(), "Unable to send cut-off notification", "notification",
@@ -238,7 +238,6 @@ func (f *Filter) empty(droppedCounter metrics.Counter) {
 	f.filterQueue.Store(make(chan *wrp.Message, f.queueSize))
 	droppedCounter.Add(float64(len(droppedMsgs)))
 	f.measures.EventQueueDepthGauge.Set(0.0)
-	return
 }
 
 // sendEvents pulls event from the queue and calls the dispatcher
@@ -248,38 +247,37 @@ Loop:
 	for {
 		defer f.wg.Done()
 		queue := f.filterQueue.Load().(chan *wrp.Message)
-		select {
 
-		case en, ok := <-queue:
-			if !ok {
-				break Loop
-			}
-			f.measures.EventQueueDepthGauge.Add(-1.0)
-
-			f.mutex.RLock()
-			deliverUntil := time.Unix(0, f.norn.ExpiresAt)
-			dropUntil := f.dropUntil
-			f.mutex.RUnlock()
-
-			now := time.Now()
-
-			if now.Before(dropUntil) {
-				f.measures.DroppedCutoffCounter.Add(1.0)
-				continue
-			}
-			if now.After(deliverUntil) {
-				f.measures.DroppedExpiredCounter.Add(1.0)
-				continue
-			}
-
-			f.workers.Acquire()
-			f.measures.WorkersCount.Add(1.0)
-			go func() {
-				f.dispatcher.Send(en)
-				f.workers.Release()
-				f.measures.WorkersCount.Add(-1.0)
-			}()
+		en, ok := <-queue
+		if !ok {
+			break Loop
 		}
+		f.measures.EventQueueDepthGauge.Add(-1.0)
+
+		f.mutex.RLock()
+		deliverUntil := time.Unix(0, f.norn.ExpiresAt)
+		dropUntil := f.dropUntil
+		f.mutex.RUnlock()
+
+		now := time.Now()
+
+		if now.Before(dropUntil) {
+			f.measures.DroppedCutoffCounter.Add(1.0)
+			continue
+		}
+		if now.After(deliverUntil) {
+			f.measures.DroppedExpiredCounter.Add(1.0)
+			continue
+		}
+
+		f.workers.Acquire()
+		f.measures.WorkersCount.Add(1.0)
+		go func() {
+			f.dispatcher.Send(en)
+			f.workers.Release()
+			f.measures.WorkersCount.Add(-1.0)
+		}()
+
 		for i := 0; i < f.maxWorkers; i++ {
 			f.workers.Acquire()
 		}

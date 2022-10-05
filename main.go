@@ -120,6 +120,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	measures := webhookClient.NewMeasures(provider.NewDiscardProvider())
 
 	app := fx.New(
 		xlog.Logger(),
@@ -160,7 +161,7 @@ func main() {
 			func(v *viper.Viper, m *manager.Manager) (registry.NornRegistry, error) {
 				config := new(registry.NornRegistry)
 				err := v.UnmarshalKey("nornRegistry", &config)
-				config.Listener = m.Update
+				config.Listener = m.Update //nolint: typecheck
 				return *config, err
 			},
 			func(m *manager.Manager) eventParser.EventSenderFunc {
@@ -190,7 +191,7 @@ func main() {
 			determineTokenAcquirer,
 			webhookClient.NewBasicRegisterer,
 			func(l fx.Lifecycle, r *webhookClient.BasicRegisterer, c WebhookConfig, logger log.Logger) (*webhookClient.PeriodicRegisterer, error) {
-				return webhookClient.NewPeriodicRegisterer(r, c.RegistrationInterval, logger, provider.NewDiscardProvider())
+				return webhookClient.NewPeriodicRegisterer(r, c.RegistrationInterval, logger, measures)
 			},
 		),
 		fx.Invoke(

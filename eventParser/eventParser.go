@@ -20,7 +20,7 @@ package eventParser
 import (
 	"context"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -29,13 +29,13 @@ import (
 
 	"emperror.dev/emperror"
 	"github.com/go-kit/kit/endpoint"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	kithttp "github.com/go-kit/kit/transport/http"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	db "github.com/xmidt-org/codex-db"
 	"github.com/xmidt-org/mimisbrunnr/norn"
 	"github.com/xmidt-org/svalinn/rules"
-	"github.com/xmidt-org/webpa-common/logging"
+	"github.com/xmidt-org/webpa-common/logging" //nolint:staticcheck
 	semaphore "github.com/xmidt-org/webpa-common/semaphore"
 	"github.com/xmidt-org/wrp-go/v3"
 )
@@ -131,7 +131,7 @@ func NewEventsEndpoint(p *EventParser) endpoint.Endpoint {
 func NewEventsEndpointDecode() kithttp.DecodeRequestFunc {
 	return func(ctx context.Context, req *http.Request) (interface{}, error) {
 		var message *wrp.Message
-		msgBytes, err := ioutil.ReadAll(req.Body)
+		msgBytes, err := io.ReadAll(req.Body)
 		req.Body.Close()
 		if err != nil {
 			return nil, err
@@ -174,7 +174,7 @@ func (p *EventParser) parseEvents() {
 		message *wrp.Message
 	)
 	queue := p.requestQueue.Load().(chan *wrp.Message)
-	select {
+	select { //nolint: gosimple
 	case message = <-queue:
 		p.measures.EventParsingQueue.Add(-1.0)
 		p.parseWorkers.Acquire()
@@ -216,7 +216,7 @@ func (p *EventParser) parseDeviceID(message *wrp.Message) error {
 	if eventType == db.State {
 		// get state and id from dest if this is a state event
 		base, _ := path.Split(message.Destination)
-		base, id := path.Split(path.Base(base))
+		base, id := path.Split(path.Base(base)) //nolint: staticcheck
 		if id == "" {
 			return err
 		}

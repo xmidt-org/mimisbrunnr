@@ -19,6 +19,7 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,8 +27,8 @@ import (
 	"time"
 
 	"github.com/InVisionApp/go-health"
-	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/metrics/provider"
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -84,7 +85,7 @@ func setupViper(v *viper.Viper, fs *pflag.FlagSet, name string) (err error) {
 		v.SetConfigFile(file)
 		err = v.ReadInConfig()
 	} else {
-		v.SetConfigName(string(name))
+		v.SetConfigName(name)
 		v.AddConfigPath(fmt.Sprintf("/etc/%s", name))
 		v.AddConfigPath(fmt.Sprintf("$HOME/.%s", name))
 		v.AddConfigPath(".")
@@ -150,7 +151,7 @@ func main() {
 			},
 			func(dc dispatch.SenderConfig) http.RoundTripper {
 				var transport http.RoundTripper = &http.Transport{
-					TLSClientConfig:       &tls.Config{},
+					TLSClientConfig:       &tls.Config{}, //nolint: gosec
 					MaxIdleConnsPerHost:   dc.MaxWorkers,
 					ResponseHeaderTimeout: dc.ResponseHeaderTimeout,
 					IdleConnTimeout:       dc.IdleConnTimeout,
@@ -215,15 +216,13 @@ func main() {
 			},
 		),
 	)
-	switch err := app.Err(); err {
-	case pflag.ErrHelp:
+	if errors.Is(app.Err(), pflag.ErrHelp) {
 		return
-	case nil:
+	} else if errors.Is(app.Err(), nil) {
 		app.Run()
-	default:
-		fmt.Println(err)
-		os.Exit(2)
 	}
+	fmt.Println(err)
+	os.Exit(2)
 
 }
 

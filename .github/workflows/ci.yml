@@ -22,4 +22,5 @@ jobs:
     with:
       lint-skip: true
       license-skip: true
+      docker-skip: true
     secrets: inherit

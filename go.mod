@@ -7,6 +7,7 @@ require (
 	github.com/InVisionApp/go-health v2.1.0+incompatible
 	github.com/aws/aws-sdk-go v1.44.93
 	github.com/go-kit/kit v0.12.0
+	github.com/go-kit/log v0.2.1
 	github.com/gorilla/mux v1.8.0
 	github.com/justinas/alice v1.2.0
 	github.com/prometheus/client_golang v1.13.0
@@ -17,12 +18,12 @@ require (
 	github.com/xmidt-org/bascule v0.11.0
 	github.com/xmidt-org/codex-db v0.7.1
 	github.com/xmidt-org/svalinn v0.14.4
-	github.com/xmidt-org/themis v0.4.8
+	github.com/xmidt-org/themis v0.4.9
 	github.com/xmidt-org/webpa-common v1.11.9
 	github.com/xmidt-org/webpa-common/v2 v2.0.7
 	github.com/xmidt-org/wrp-go/v3 v3.1.4
 	github.com/xmidt-org/wrp-listener v0.2.5
-	go.uber.org/fx v1.18.1
+	go.uber.org/fx v1.18.2
 )
 
 require (
@@ -34,7 +35,6 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
-	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -74,21 +74,21 @@ require (
 	github.com/xmidt-org/httpaux v0.3.2 // indirect
 	github.com/xmidt-org/sallust v0.1.6 // indirect
 	github.com/xmidt-org/touchstone v0.1.2 // indirect
-	go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux v0.34.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.34.0 // indirect
-	go.opentelemetry.io/otel v1.9.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux v0.36.1 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.36.1 // indirect
+	go.opentelemetry.io/otel v1.10.0 // indirect
 	go.opentelemetry.io/otel/exporters/jaeger v1.9.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.9.0 // indirect
 	go.opentelemetry.io/otel/exporters/zipkin v1.9.0 // indirect
-	go.opentelemetry.io/otel/metric v0.31.0 // indirect
+	go.opentelemetry.io/otel/metric v0.32.1 // indirect
 	go.opentelemetry.io/otel/sdk v1.9.0 // indirect
-	go.opentelemetry.io/otel/trace v1.9.0 // indirect
+	go.opentelemetry.io/otel/trace v1.10.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/dig v1.15.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
 	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
-	golang.org/x/sys v0.0.0-20220907062415-87db552b00fd // indirect
+	golang.org/x/sys v0.0.0-20220909162455-aba9fc2a8ff2 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect

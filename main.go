@@ -161,7 +161,7 @@ func main() {
 			func(v *viper.Viper, m *manager.Manager) (registry.NornRegistry, error) {
 				config := new(registry.NornRegistry)
 				err := v.UnmarshalKey("nornRegistry", &config)
-				config.Listener = m.Update //nolint: typecheck
+				config.Listener = m.Update
 				return *config, err
 			},
 			func(m *manager.Manager) eventParser.EventSenderFunc {

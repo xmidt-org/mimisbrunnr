@@ -27,7 +27,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
-	argus "github.com/xmidt-org/argus/model"
+	"github.com/xmidt-org/argus/chrysom"
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"github.com/xmidt-org/mimisbrunnr/model"
 	"github.com/xmidt-org/mimisbrunnr/norn"
@@ -105,7 +105,7 @@ func NewManager(sc dispatch.SenderConfig, transport http.RoundTripper, logger lo
 // with the recent norn retrieved from item. If the norn is brand new, a new dispatcher and
 // filter is created for it and added to local cache. Any old dispatchers and filters is also
 // removed part of Update.
-func (m *Manager) Update(items []argus.Item) {
+func (m *Manager) Update(items chrysom.Items) {
 	recentIDMap := make(map[string]model.Norn)
 	recentURLMap := make(map[string]model.Norn)
 

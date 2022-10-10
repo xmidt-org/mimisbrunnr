@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/xmidt-org/argus/chrysom"
 	"go.uber.org/fx"
 )
@@ -33,17 +33,20 @@ type RegistryIn struct {
 }
 
 type Registry struct {
-	HookStore *chrysom.Client
+	HookStore *chrysom.BasicClient
 	Logger    log.Logger
 }
 
 type NornRegistry struct {
-	Logger   log.Logger
-	Listener chrysom.ListenerFunc
-	Argus    chrysom.ClientConfig
+	Logger         log.Logger
+	Listener       chrysom.ListenerFunc
+	ListenerConfig chrysom.ListenerClientConfig
+	Measures       chrysom.Measures
+	Reader         chrysom.Reader
+	Argus          chrysom.BasicClientConfig
 }
 
-func jsonResponse(rw http.ResponseWriter, code int, msg string) {
+func jsonResponse(rw http.ResponseWriter, code int, msg string) { //nolint: unused
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(code)
 	rw.Write([]byte(fmt.Sprintf(`{"message":"%s"}`, msg)))
@@ -52,13 +55,11 @@ func jsonResponse(rw http.ResponseWriter, code int, msg string) {
 // NewRegistry returns Registry with configured argus client and listener
 func NewRegistry(in RegistryIn) (*Registry, error) {
 
-	argus, err := chrysom.CreateClient(in.NornRegistry.Argus, chrysom.WithLogger(in.NornRegistry.Logger))
+	argus, err := chrysom.NewBasicClient(in.NornRegistry.Argus, nil)
 	if err != nil {
 		return nil, err
 	}
-	if in.NornRegistry.Listener != nil {
-		argus.SetListener(in.NornRegistry.Listener)
-	}
+
 	return &Registry{
 		Logger:    in.NornRegistry.Logger,
 		HookStore: argus,

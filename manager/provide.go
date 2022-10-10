@@ -20,7 +20,7 @@ package manager
 import (
 	"net/http"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/xmidt-org/mimisbrunnr/dispatch"
 	"go.uber.org/fx"
 )

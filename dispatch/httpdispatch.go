@@ -21,23 +21,22 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/sha1"
+	"crypto/sha1" //nolint: gosec
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/xmidt-org/mimisbrunnr/model"
-	"github.com/xmidt-org/webpa-common/logging"
-	"github.com/xmidt-org/webpa-common/xhttp"
-	"github.com/xmidt-org/wrp-go/v2"
+	"github.com/xmidt-org/webpa-common/v2/logging" //nolint: staticcheck
+	"github.com/xmidt-org/webpa-common/v2/xhttp"   //nolint: staticcheck
+	"github.com/xmidt-org/wrp-go/v3"
 )
 
 // SenderConfig contains config to construct HTTPDispatcher, Transport, and Filter.
@@ -160,7 +159,7 @@ func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 			return code < 200 || code > 299
 		},
 	}
-	resp, err := xhttp.RetryTransactor(retryOptions, h.sender)(req)
+	resp, err := xhttp.RetryTransactor(retryOptions, h.sender)(req) //nolint: bodyclose
 	code = "failure"
 	if nil != err {
 		h.measures.DroppedNetworkErrCounter.Add(1.0)
@@ -171,7 +170,7 @@ func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 		// read until the response is complete before closing to allow
 		// connection reuse
 		if nil != resp.Body {
-			io.Copy(ioutil.Discard, resp.Body)
+			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
 	}

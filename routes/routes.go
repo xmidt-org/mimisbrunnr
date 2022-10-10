@@ -35,8 +35,8 @@ var (
 )
 
 const (
-	applicationName = "mimisbrunnr"
-	apiBase         = "api/v1"
+	applicationName = "mimisbrunnr" //nolint: unused
+	apiBase         = "api/v1"      //nolint: unused
 )
 
 // ServerChainIn is the set of dependencies for this package's components

@@ -5,8 +5,9 @@ go 1.19
 require (
 	emperror.dev/emperror v0.33.0
 	github.com/InVisionApp/go-health v2.1.0+incompatible
-	github.com/aws/aws-sdk-go v1.44.93
+	github.com/aws/aws-sdk-go v1.44.114
 	github.com/go-kit/kit v0.12.0
+	github.com/go-kit/log v0.2.1
 	github.com/gorilla/mux v1.8.0
 	github.com/justinas/alice v1.2.0
 	github.com/prometheus/client_golang v1.13.0
@@ -34,7 +35,6 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
-	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

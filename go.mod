@@ -5,7 +5,7 @@ go 1.19
 require (
 	emperror.dev/emperror v0.33.0
 	github.com/InVisionApp/go-health v2.1.0+incompatible
-	github.com/aws/aws-sdk-go v1.44.114
+	github.com/aws/aws-sdk-go v1.44.115
 	github.com/go-kit/kit v0.12.0
 	github.com/go-kit/log v0.2.1
 	github.com/gorilla/mux v1.8.0

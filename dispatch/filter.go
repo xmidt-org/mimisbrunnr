@@ -176,7 +176,7 @@ func (f *Filter) queueOverflow() {
 	}
 
 	// if no URL to send cut off notification to, do nothing
-	if "" == failureURL {
+	if failureURL == "" {
 		return
 	}
 
@@ -191,7 +191,7 @@ func (f *Filter) queueOverflow() {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	if "" != secret {
+	if secret != "" {
 		h := hmac.New(sha1.New, []byte(secret))
 		h.Write(msg)
 		sig := fmt.Sprintf("sha1=%s", hex.EncodeToString(h.Sum(nil)))

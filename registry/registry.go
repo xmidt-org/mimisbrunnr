@@ -35,7 +35,7 @@ type NornRegistry struct {
 func jsonResponse(rw http.ResponseWriter, code int, msg string) { //nolint: unused
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(code)
-	rw.Write([]byte(fmt.Sprintf(`{"message":"%s"}`, msg)))
+	rw.Write([]byte(fmt.Sprintf(`{"message":"%s"}`, msg))) //nolint: staticcheck
 }
 
 // NewRegistry returns Registry with configured argus client and listener

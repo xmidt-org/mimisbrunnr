@@ -160,7 +160,7 @@ func (p *EventParser) parseEvents() {
 		message *wrp.Message
 	)
 	queue := p.requestQueue.Load().(chan *wrp.Message)
-	select { //nolint: gosimple
+	select { //nolint: staticcheck
 	case message = <-queue:
 		p.measures.EventParsingQueue.Add(-1.0)
 		p.parseWorkers.Acquire()

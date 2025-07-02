@@ -126,7 +126,7 @@ func (h *HTTPDispatcher) Send(msg *wrp.Message) {
 	}
 
 	// Apply the secret
-	if "" != h.httpConfig.Secret {
+	if h.httpConfig.Secret != "" {
 		s := hmac.New(sha1.New, []byte(h.httpConfig.Secret))
 		s.Write(body)
 		sig := fmt.Sprintf("sha1=%s", hex.EncodeToString(s.Sum(nil)))
